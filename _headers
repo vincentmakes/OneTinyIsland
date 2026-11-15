@@ -1,0 +1,22 @@
+# Cloudflare Pages response headers (https://developers.cloudflare.com/pages/configuration/headers/).
+# The site is published from the repo root, so these rules cover every file in the repo.
+# Matching rules combine (a repeated header is comma-joined), so the narrower rule below
+# detaches Cache-Control with "!" before setting its own.
+#
+# No Content-Security-Policy on purpose: the page is one self-contained file with inline
+# <script> and <style>, WebGL, Web Audio and a data: favicon, so a CSP would need
+# 'unsafe-inline' and would buy little.
+#
+# Everything: basic hardening, no sensors/camera/mic needed, and always revalidate so a
+# new deploy of index.html shows up at once.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Screenshots, including the social preview image docs/screenshots/hero.jpg: cache for a day,
+# serve stale for up to a week while revalidating.
+/docs/screenshots/*
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
