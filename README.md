@@ -8,7 +8,7 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 
 ## What's in it
 
-- **Eleven weathers**: clear, partly cloudy, overcast, fog, drizzle, rain, thunderstorm (with lightning), gale, hail, snow and blizzard. Left alone, the island picks its own weather every so often.
+- **Eight weathers**: clear, partly cloudy, overcast, fog, rain, thunderstorm (with lightning), gale and snow. Left alone, the island picks its own weather every so often.
 - **Day and night**: the sun, moon and stars move on their own, sunsets glow, the village lights come on after dark, and some nights bring an aurora.
 - **A sleepy volcano** that smokes all day and erupts now and then, or whenever you press Erupt.
 - **A little village** with huts, a farm patch, a jetty, a lighthouse and a waterfall.
@@ -55,7 +55,7 @@ If your browser is fussy about `file://` pages, any static server will do, for e
   ```js
   __island.ships.summon()        // pirates ahoy!
   __island.erupt()               // wake the volcano
-  __island.setWeather('snow')    // or 'storm', 'fog', 'blizzard'...
+  __island.setWeather('snow')    // or 'storm', 'fog', 'gale'...
   __island.setTime(21.5)         // jump to the evening
   __island.setSpeed(30)          // fast-forward time
   __island.setAuto(false)        // stop the weather changing on its own

@@ -1,6 +1,6 @@
 # One Tiny Island: notes for coding sessions
 
-A just-for-fun, procedural low-poly three.js island diorama (volcano, village, lagoon, wildlife, 11 weathers, day/night, boats, a galleon and friendly pirates) in **one self-contained HTML page**, deployed as a static site.
+A just-for-fun, procedural low-poly three.js island diorama (volcano, village, lagoon, wildlife, 8 weathers, day/night, boats, a galleon and friendly pirates) in **one self-contained HTML page**, deployed as a static site.
 
 ## Layout
 
@@ -55,7 +55,7 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, l
 
 ## Plugin hook and `kit`
 
-`jx` calls every factory in `window.__islandPlugins` with `kit`, adds the returned `group` to the scene, calls `update(t, dt, env)` every frame (`t` wave clock, `env` = `{t, rain, snow, wind, sea, lights, snowCover, night, erupt, fogK, sailAngle, ice, calmK, hail, gulls, xmas}`) and publishes `api` as `window.__island[name]`. A throwing plugin is disabled with a console warning. `kit`:
+`jx` calls every factory in `window.__islandPlugins` with `kit`, adds the returned `group` to the scene, calls `update(t, dt, env)` every frame (`t` wave clock, `env` = `{t, rain, snow, wind, sea, lights, snowCover, night, erupt, fogK, sailAngle, ice, calmK, gulls, xmas}`) and publishes `api` as `window.__island[name]`. A throwing plugin is disabled with a console warning. `kit`:
 
 | kit | bundle | kit | bundle |
 |---|---|---|---|
