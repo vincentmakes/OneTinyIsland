@@ -95,7 +95,7 @@ Also `worldRadius` (`De`), `scene`, `camera`, `controls`, `state`, `toast(msg)` 
 
 ## Deployment
 
-Cloudflare Pages Git integration, no build: framework preset None, empty build command, output directory `/`, production branch `main`; other branches get preview URLs. The whole repo root is published, so never commit anything private. `_headers` controls caching and security headers.
+Live at https://onetinyisland.verdet.me (production branch `main`). Cloudflare Pages Git integration, no build: framework preset None, empty build command, output directory `/`, production branch `main`; other branches get preview URLs. The whole repo root is published, so never commit anything private. `_headers` controls caching and security headers.
 
 ## Commits
 

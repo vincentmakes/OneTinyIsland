@@ -2,6 +2,8 @@
 
 A tiny procedural 3D island diorama that lives in a single HTML file. Open it, drag it around, and watch the weather roll in.
 
+**[Visit the island at onetinyisland.verdet.me](https://onetinyisland.verdet.me)** — it runs right in your browser, nothing to install.
+
 ![One Tiny Island on a sunny morning](docs/screenshots/hero.jpg)
 
 ## What's in it
@@ -43,24 +45,6 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 Just open `index.html` in a recent browser. There is no build step, no dependencies and nothing to install, and the page makes no network requests: everything, including three.js, is inside that one file. It needs WebGL.
 
 If your browser is fussy about `file://` pages, any static server will do, for example `npx serve .`.
-
-## Publish on Cloudflare Pages
-
-The repo is meant to be deployed with Cloudflare Pages' Git integration:
-
-1. In the Cloudflare dashboard, create a **Pages** project, choose to connect it to Git, and pick this repository.
-2. Build settings:
-   - **Framework preset**: None
-   - **Build command**: leave it empty (or `exit 0` if the field insists on something)
-   - **Build output directory**: `/`
-   - **Production branch**: `main`
-3. Save and deploy.
-
-From then on every push to `main` deploys the site, and other branches get their own preview URLs.
-
-The `_headers` file sets caching (always revalidate the page, cache the screenshots for a day) and a few security headers. Note that the whole repo root is published, so anything you commit is reachable on the site.
-
-After the first deploy, change the `og:image` and `twitter:image` URLs in `index.html` to absolute ones (for example `https://your-site.pages.dev/docs/screenshots/hero.jpg`) so link previews show the island.
 
 ## Under the hood
 
