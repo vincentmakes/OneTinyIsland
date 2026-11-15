@@ -31,7 +31,7 @@ const DESKTOP = { width: 1280, height: 720 };
 const PHONE = { width: 390, height: 844 };
 
 const SHOTS = [
-  { name: 'hero', weather: 'partly', hours: 10.5, camera: [0.62, 0.42, 0.78, 0, 2, 2], settle: 12 },
+  { name: 'hero', weather: 'partly', hours: 10.5, camera: [0.55, 0.4, 0.6, 0, 0, 5], settle: 12 },
   { name: 'sunset', weather: 'partly', hours: 18.6, camera: [-0.5, 0.3, 0.8, 0, 2, 2], settle: 12 },
   { name: 'night', weather: 'clear', hours: 22.5, camera: [0.9, 0.38, 0.72, -6, 2, 8], settle: 12 },
   { name: 'storm', weather: 'storm', hours: 15, camera: [0.4, 0.34, 0.8, -4, 3, 0], settle: 14 },
@@ -97,11 +97,19 @@ async function main() {
       page.on('pageerror', (e) => errors.push(`[${shot.name}] page error: ${e.message}`));
       page.on('console', (m) => m.type() === 'error' && errors.push(`[${shot.name}] console error: ${m.text()}`));
 
+      // Let us pause the page's own render loop: software WebGL at 2x is slow enough that a
+      // free-running loop starves the screenshot. While paused, the canvas keeps showing the
+      // last frame rendered by __island.step().
+      await page.addInitScript(() => {
+        const raf = window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame = (cb) => raf((t) => (window.__pauseLoop ? window.requestAnimationFrame(cb) : cb(t)));
+      });
       await page.goto(pathToFileURL(opts.page).href);
       await page.waitForFunction(() => window.__island, null, { timeout: 60000 });
+      await page.evaluate(() => (window.__pauseLoop = true));
       if (await page.$('.fail')) throw new Error(`[${shot.name}] the page showed its failure overlay`);
-      // Toasts are transient chatter; keep them out of the pictures.
-      await page.addStyleTag({ content: '.toast { display: none !important; }' });
+      // Keep transient toasts and the faint "show UI" button (hidden-UI mode) out of the pictures.
+      await page.addStyleTag({ content: '.toast, body.hidden-ui .fab.restore { display: none !important; }' });
 
       const file = join(opts.out, `${shot.name}.jpg`);
       const ok = await page.evaluate(setUp, { shot, dt: DT });
