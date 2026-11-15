@@ -32,14 +32,16 @@ const PHONE = { width: 390, height: 844 };
 
 const SHOTS = [
   { name: 'hero', weather: 'partly', hours: 10.5, camera: [0.55, 0.4, 0.6, 0, 0, 5], settle: 12 },
-  { name: 'sunset', weather: 'partly', hours: 18.6, camera: [-0.5, 0.3, 0.8, 0, 2, 2], settle: 12 },
+  { name: 'sunset', weather: 'partly', hours: 17.8, camera: [1.82, 0.24, 0.62, 0, 0, 2], settle: 12 }, // looking into the setting sun
   { name: 'night', weather: 'clear', hours: 22.5, camera: [0.9, 0.38, 0.72, -6, 2, 8], settle: 12 },
   { name: 'storm', weather: 'storm', hours: 15, camera: [0.4, 0.34, 0.8, -4, 3, 0], settle: 14 },
-  { name: 'snow', weather: 'snow', hours: 11, snowCover: 1, camera: [0.62, 0.48, 0.8, 0, 2, 2], settle: 14 },
-  { name: 'eruption', weather: 'partly', hours: 19.4, erupt: true, camera: [-0.9, 0.24, 0.6, -28, 10, -4], settle: 10, eruptAfter: 4.5 },
-  { name: 'pirates', weather: 'clear', hours: 11, ships: true, settle: 10 },
-  { name: 'controls', weather: 'clear', hours: 13, camera: [0.62, 0.5, 1, -1, 2.5, 3], settle: 10, panel: true },
-  { name: 'mobile', weather: 'partly', hours: 9.5, camera: [0.62, 0.7, 1, -1, 2.5, 3], settle: 10, viewport: PHONE, ui: true },
+  { name: 'snow', weather: 'snow', hours: 11, snowCover: 1, camera: [0.55, 0.4, 0.6, 0, 0, 5], settle: 14 },
+  { name: 'eruption', weather: 'partly', hours: 18.3, erupt: true, camera: [-0.9, 0.24, 0.6, -28, 10, -4], settle: 10, eruptAfter: 4.5 },
+  // pirates: the camera is aimed at the midpoint of the two ships once the encounter runs.
+  // shipCamera: azimuth offset from looking straight in toward the island, elevation, distance (world units).
+  { name: 'pirates', weather: 'clear', hours: 11, ships: true, settle: 10, shipCamera: { azOffset: 0.7, elevation: 0.32, distance: 34 } },
+  { name: 'controls', weather: 'clear', hours: 13, camera: [0.62, 0.5, 0.85, 19, 2.5, -11.5], settle: 10, panel: true }, // island left of the panel
+  { name: 'mobile', weather: 'partly', hours: 9.5, camera: [0.62, 0.8, 0.85, -1, 2.5, 3], settle: 10, viewport: PHONE, ui: true },
 ];
 
 const GL_FLAGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
@@ -163,16 +165,17 @@ function setUp({ shot, dt }) {
     for (let t = 0; t < 120; t += 0.5) {
       step(0.5);
       s = isl.ships.state();
-      if (s.encounter && s.galleon.state === 'cruising' && s.pirate.state !== 'away') break;
+      if (s.encounter && s.galleon.state !== 'away' && s.pirate.state !== 'away') break;
     }
     if (!s || !s.encounter) return `no encounter started (state: ${JSON.stringify(s)})`;
     step(2.5);
     s = isl.ships.state();
     const mx = (s.galleon.x + s.pirate.x) / 2;
     const mz = (s.galleon.z + s.pirate.z) / 2;
-    // Look at the midpoint from further out at sea, so the island fills the background.
-    const az = Math.atan2(mx, mz);
-    isl.setCamera(az, 0.26, 0.32, mx, 1.5, mz);
+    // Look in toward the island (a little from the side), so it fills the background.
+    const { azOffset, elevation, distance } = shot.shipCamera;
+    const base = isl.setCamera(0, elevation, 1); // returns the default orbit distance
+    isl.setCamera(Math.atan2(mx, mz) + azOffset, elevation, distance / base, mx, 1.5, mz);
     step(0.1);
   }
   isl.ui.refresh && isl.ui.refresh();
