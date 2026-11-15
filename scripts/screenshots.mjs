@@ -11,7 +11,9 @@
 //
 // Every shot freezes auto weather, the day cycle and auto-rotate, sets its state through
 // the page's debug API (window.__island), then steps the simulation so transitions settle.
-// Exits non-zero if the page throws or logs an error, or if a shot fails.
+// Exits non-zero if the page throws or logs an error, or if a shot fails. The pirates shot
+// is skipped with a warning when the page has no window.__island.ships API.
+// Takes about 2 minutes with software WebGL.
 
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';

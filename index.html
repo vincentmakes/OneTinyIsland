@@ -183,11 +183,14 @@ button { font: inherit; color: inherit; }
 
   // ---------- lanes ---------------------------------------------------------
   // World disc radius is 86 (hard rim). The existing sailboat circles at r 70.
-  // Galleon: outer lane, counter-clockwise (angle increasing).
+  // Sand spits reach out to r 67.5 (water shallower than 3 units), so both
+  // lanes sit outside the sailboat track:
+  // Galleon: outer lane, angle increasing. Beam edge at r 80.85 (< 81).
   // Pirate: inner lane, the other way round, so the two meet head-on.
-  const GALLEON_R = 77;   // hull edge stays within r 79 (< 81)
-  const PIRATE_R = 63;    // well clear of the reef/lagoon, inside the sailboat track
-  const ALONGSIDE = 10;   // pirate runs this far inside the galleon while firing
+  //         Beam edge at r 71.7, 1 unit clear of the sailboat's beam.
+  // While "attacking" the pirate simply runs alongside in its own lane, 6.3 off.
+  const GALLEON_R = 79.3;
+  const PIRATE_R = 73;
 
   // ---------- geometry helpers ----------------------------------------------
   const part = (geo, color, x = 0, y = 0, z = 0) => tint(geo, color).translate(x, y, z);
@@ -408,16 +411,11 @@ button { font: inherit; color: inherit; }
     const th = to.th + to.omega * T, r = to.r;
     const cx = Math.cos(th) * r, cz = Math.sin(th) * r;
     const tx = -Math.sin(th) * Math.sign(to.omega || to.dir), tz = Math.cos(th) * Math.sign(to.omega || to.dir); // target's heading
-    // pick a miss: splash ahead of the bow, behind the stern, or short of the hull
-    const roll = rand(), miss = to.hullRadius + 2.5 + rand() * 2.5;
-    let ex, ez, mode;
-    if (roll < 0.4) { ex = cx + tx * miss; ez = cz + tz * miss; mode = 'ahead'; }
-    else if (roll < 0.75) { ex = cx - tx * miss; ez = cz - tz * miss; mode = 'astern'; }
-    else { ex = cx - dx * (to.beam + 3 + rand() * 1.5); ez = cz - dz * (to.beam + 3 + rand() * 1.5); mode = 'short';
-      // 'short' lands between the ships: keep it outside the target's hull radius too
-      const k = (to.hullRadius + 1) / Math.max(0.01, Math.hypot(ex - cx, ez - cz));
-      if (k > 1) { ex = cx + (ex - cx) * k + tx * 2; ez = cz + (ez - cz) * k + tz * 2; }
-    }
+    // pick a miss: the splash lands well ahead of the bow or behind the stern
+    // (the ships sail side by side, so nothing lands between them)
+    const miss = to.hullRadius + 2.5 + rand() * 2.5, sgn = rand() < 0.55 ? 1 : -1;
+    const ex0 = cx + tx * miss * sgn, ez0 = cz + tz * miss * sgn, mode = sgn > 0 ? 'ahead' : 'astern';
+    let ex = ex0, ez = ez0;
     // never past the rim
     const er = Math.hypot(ex, ez);
     if (er > 82) { ex *= 82 / er; ez *= 82 / er; }
@@ -475,7 +473,7 @@ button { font: inherit; color: inherit; }
     const gap = angleDiff(g.th, p.th);                 // >0: galleon is ahead of the pirate
     if (enc.phase === 'approach' || enc.phase === 'volley') {
       // pirate swings round and runs alongside, just inside the galleon
-      p.rTarget = g.r - ALONGSIDE;
+      p.rTarget = p.lane;
       const want = g.omega + clamp(gap * 0.6, -0.05, 0.05);
       p.omega += (want - p.omega) * Math.min(1, dt * 0.8);
       if (enc.phase === 'approach' && ((Math.abs(gap) * g.r < 3 && Math.abs(p.r - p.rTarget) < 1.2 && p.omega * g.omega > 0) || enc.t > 9)) {
@@ -529,11 +527,12 @@ button { font: inherit; color: inherit; }
     const nx = Math.cos(s.th) * s.r, nz = Math.sin(s.th) * s.r;
     const vx = nx - s.x, vz = nz - s.z;
     s.x = nx; s.z = nz;
-    if (vx * vx + vz * vz > (0.15 * dt) * (0.15 * dt)) {   // turn towards the direction of travel
-      const want = Math.atan2(vz, vx);
-      const d = angleDiff(want, s.heading), maxTurn = 0.7 * dt;
-      s.heading += clamp(d, -maxTurn, maxTurn);
-    }
+    // turn towards the direction of travel; nearly stopped ships (the pirate
+    // swinging round) pivot faster, towards the way they are about to go
+    const speed = dt > 0 ? Math.hypot(vx, vz) / dt : 0;
+    const want = speed > 0.3 ? Math.atan2(vz, vx) : s.th + (s.omega >= 0 ? Math.PI / 2 : -Math.PI / 2);
+    const maxTurn = (0.5 + 1.1 * (1 - Math.min(1, speed / 1.6))) * dt;
+    s.heading += clamp(angleDiff(want, s.heading), -maxTurn, maxTurn);
     // bob and roll on the same waves the water shader draws
     const sea = env.sea, h0 = waveHeight(s.x, s.z, t, sea);
     const fx = Math.cos(s.heading), fz = Math.sin(s.heading);
@@ -627,10 +626,12 @@ button { font: inherit; color: inherit; }
         b.age += dt;
         if (b.age >= b.T) {
           b.on = false;
-          const miss = Math.hypot(b.ex - b.target.x, b.ez - b.target.z);
           stats.landings++;
-          stats.minMiss[b.target.name] = Math.min(stats.minMiss[b.target.name], miss);
-          if (miss < b.target.hullRadius) console.warn('ships: cannonball landed inside hull radius', b.mode, miss);
+          for (const s of ships) {           // distance to BOTH hulls, not only the one aimed at
+            const miss = Math.hypot(b.ex - s.x, b.ez - s.z);
+            stats.minMiss[s.name] = Math.min(stats.minMiss[s.name], miss);
+            if (miss < s.hullRadius) console.warn('ships: cannonball landed inside a hull radius', s.name, b.mode, miss);
+          }
           splash(b.ex, b.ez, t, env.sea);
         }
       }
@@ -718,9 +719,10 @@ button { font: inherit; color: inherit; }
       };
     },
     /** Shallowest water (terrain height, negative = depth) along each lane, sampled every degree. */
+    terrain: terrainHeight,
     laneCheck() {
       const out = {};
-      for (const [k, r] of [['galleon', GALLEON_R], ['pirate', PIRATE_R], ['alongside', GALLEON_R - ALONGSIDE]]) {
+      for (const [k, r] of [['galleon', GALLEON_R], ['pirate', PIRATE_R]]) {
         let worst = -Infinity;
         for (let i = 0; i < 360; i++) {
           const a = (i / 360) * TAU;
