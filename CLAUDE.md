@@ -38,7 +38,7 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, l
   |---|---|
   | `ye` | colour palette |
   | `Qu` | terrain mesh; `te(x,z)` terrain height |
-  | `nf` | water and rim wall; `rr(x,z,t,sea)` wave height |
+  | `nf` | water and rim wall; `rr(x,z,t,sea)` wave height, the JS twin of GLSL `waveH` (string `Ku`): seven Stokes-shaped trains via `otiWv` (two near main swells that beat into sets, a cross swell, two wind seas, two chop trains growing with sea²). Keep the two identical: boats, ships and dolphins ride on `rr` |
   | `sf` / `of` | sky dome / clouds |
   | `cf` | vegetation |
   | `uf` | village and boats (`ol` = hull helper, delegates to `__islandBoatHull`) |
