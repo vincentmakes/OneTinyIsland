@@ -1978,13 +1978,14 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
   Parrots: three pairs of red-and-blue macaws in the broadleaf forest. Each pair sits side by
   side on a treetop, looks about, and in fair daytime weather flies a low arc over the canopy
   to another tree, the mate half a second behind. Red birds whose only other colour is blue
-  (flight feathers, wing tips, tail tip), with a pale face patch and a black beak.
+  (flight feathers, wing tips, tail tip), with a pale face patch and a charcoal beak.
 
-  One InstancedMesh of 6 birds (19 triangles each) on the gulls' program: the wing flap in the
-  bundle's material patcher fades with the instance's x-to-y scale ratio, so a perched bird,
-  squashed along its wingspan (x scale 0.32), holds its wings folded; taking off unfolds them. No shadow, left
-  out of the water reflection: one draw call. Perch trees come from kit.forest (the broadleaf
-  trees' InstancedMesh). Nothing is allocated per frame.
+  One InstancedMesh of 6 birds (40 triangles each) on the gulls' program. The instance's
+  x-to-y scale ratio is a signal for the bundle's material patcher: below 1 it folds the wings
+  onto the back, bends the head level and stops the flap (and undoes the squash), so a perched
+  bird holds its wings folded and taking off unfolds them. No shadow, left out of the water
+  reflection: one draw call. Perch trees come from kit.forest (the broadleaf trees'
+  InstancedMesh). Nothing is allocated per frame.
 */
 (window.__islandPlugins = window.__islandPlugins || []).push(function parrots(kit) {
   const forest = kit.forest;
@@ -2060,113 +2061,137 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
   group.add(birds);
 
   // ---------- perches: tall broadleaf treetops in the dense forest ----------
-  const perches = [];
-  let canopy = [], C = null, occ = [];                              // C: the home camera position
+  let perches = [];
+  let canopy = [], C = null, occ = [];                     // C: the home camera position
+  const M = new Matrix4(), V = new Vector3();
   {
     const g = forest.geometry, pos = g.attributes.position;
-    let ty = -1e9, tx = 0, tz = 0;                       // the canopy's highest vertex (local)
+    let ty = -1e9, tx = 0, tz = 0;                         // the canopy's highest vertex (local)
     for (let i = 0; i < pos.count; i++) if (pos.getY(i) > ty) { ty = pos.getY(i); tx = pos.getX(i); tz = pos.getZ(i); }
-    const M = new Matrix4(), V = new Vector3(), trees = [];
+    const trees = [];
     for (let i = 0; i < forest.count; i++) {
       forest.getMatrixAt(i, M);
       V.set(tx, ty, tz).applyMatrix4(M);
       const e = M.elements, sy = Math.hypot(e[4], e[5], e[6]);
       trees.push({ x: V.x, y: V.y, z: V.z, sy, n: 0 });
     }
-    for (const a of trees) for (const b of trees) if (a !== b && Math.hypot(a.x - b.x, a.z - b.z) < 6) a.n++;
+    canopy = trees;
+  }
+  function topAt(x, z) {                                    // ground (+1.5) or the treetops within 2.2 of (x, z), for check()
+    let h = te(x, z) + 1.5;
+    for (let n = 0; n < canopy.length; n++) { const t = canopy[n]; if (Math.abs(t.x - x) < 2.2 && Math.abs(t.z - z) < 2.2 && t.y > h) h = t.y; }
+    return h;
+  }
+  for (let i = 0; i < canopy.length; i++) for (let j = i + 1; j < canopy.length; j++) {   // trees within 6: how dense the forest is
+    const a = canopy[i], b = canopy[j], dx = a.x - b.x, dz = a.z - b.z;
+    if (dx * dx + dz * dz < 36) { a.n++; b.n++; }
+  }
+  // the treetops within 3.1 of any point, as a height field on a 1-unit grid (for the humps:
+  // one lookup instead of a search; conservative, so a hump never comes out lower)
+  const HF = 180, HO = 90, hf = new Float32Array(HF * HF).fill(-1e9);
+  for (const t of canopy) {
+    const r = 3.1 + 0.71, i0 = Math.max(0, Math.floor(t.x - r + HO)), i1 = Math.min(HF - 1, Math.ceil(t.x + r + HO));
+    const j0 = Math.max(0, Math.floor(t.z - r + HO)), j1 = Math.min(HF - 1, Math.ceil(t.z + r + HO));
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) if (hf[i * HF + j] < t.y) hf[i * HF + j] = t.y;
+  }
+  const topWide = (x, z) => {
+    const i = Math.round(x + HO), j = Math.round(z + HO);
+    const t = i >= 0 && i < HF && j >= 0 && j < HF ? hf[i * HF + j] : -1e9;
+    return Math.max(te(x, z) + 1.5, t);
+  };
+  // occluders: every shadow-casting vegetation instance (trees, palms, rocks) as a sphere
+  for (const m of (forest.parent ? forest.parent.children : [forest])) {
+    if (!m.isInstancedMesh || !m.castShadow) continue;
+    if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+    const bs = m.geometry.boundingSphere;
+    for (let i = 0; i < m.count; i++) {
+      m.getMatrixAt(i, M);
+      V.copy(bs.center).applyMatrix4(M);
+      const e = M.elements, sc = Math.max(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]));
+      occ.push(V.x, V.y, V.z, bs.radius * sc);
+    }
+  }
+  // the crowns (occluder indices) within r of a perch tree at (x, z), leaving the tree itself out
+  const nearOcc = (x, z, r) => {
+    const out = [];
+    for (let o = 0; o < occ.length; o += 4) {
+      const ox = occ[o] - x, oz = occ[o + 2] - z, rr = r + occ[o + 3];
+      if (Math.abs(ox) < rr && Math.abs(oz) < rr && ox * ox + oz * oz >= 1.8 * 1.8) out.push(o);
+    }
+    return out;
+  };
+  // how far (x, y, z) is from the nearest crown in the list (negative: inside it)
+  const crownClear = (list, x, y, z) => {
+    let w = 1e9;
+    for (let n = 0; n < list.length; n++) {
+      const o = list[n], dx = x - occ[o], dy = y - occ[o + 1], dz = z - occ[o + 2], lim = w + occ[o + 3];
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < lim * lim) w = Math.sqrt(d2) - occ[o + 3];
+    }
+    return w;
+  };
+  {
     const R = makeRng(7171);
     const ok = (t) => Math.hypot(t.x - 4, t.z - 18) > 10 && Math.hypot(t.x + 14.8, t.z - 14.6) > 10 &&
       Math.hypot(t.x + 36, t.z + 6) > 16 && t.n >= 3 && isFinite(t.y);
     // Can a bird on this treetop be seen from the home view (the camera as the page opens)?
-    // Inside the frame, and the line to the camera clears the ground and the other treetops.
+    // Inside the frame, and the line to the camera clears the ground and every vegetation sphere.
     const cam = kit.camera; C = cam.position.clone();
     cam.updateMatrixWorld();
-    // occluders: every shadow-casting vegetation instance (trees, palms, rocks) as a sphere
-    for (const m of (forest.parent ? forest.parent.children : [forest])) {
-      if (!m.isInstancedMesh || !m.castShadow) continue;
-      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
-      const bs = m.geometry.boundingSphere;
-      for (let i = 0; i < m.count; i++) {
-        m.getMatrixAt(i, M);
-        V.copy(bs.center).applyMatrix4(M);
-        const e = M.elements, sc = Math.max(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]));
-        occ.push(V.x, V.y, V.z, bs.radius * sc * 1.0);
-      }
-    }
     const seen = (t) => {
-      const bx = t.x, by = t.y + 0.9, bz = t.z;                   // a perched bird's head
+      const bx = t.x, by = t.y + 0.9, bz = t.z;
       V.set(bx, by, bz).project(cam);
       if (Math.abs(V.x) > 0.85 || Math.abs(V.y) > 0.85 || V.z > 1) return false;
       const dx = C.x - bx, dy = C.y - by, dz = C.z - bz, L = Math.hypot(dx, dy, dz);
-      for (let s = 1.0; s < L; s += 0.5) {                        // ground
+      for (let s = 1.0; s < L; s += 0.8) {
         const y = by + (dy * s) / L;
         if (y > 14) break;
         if (te(bx + (dx * s) / L, bz + (dz * s) / L) + 0.3 > y) return false;
       }
-      for (let i = 0; i < occ.length; i += 4) {                   // crowns between the bird and the camera
-        const ox = occ[i] - bx, oy = occ[i + 1] - by, oz = occ[i + 2] - bz, r = occ[i + 3];
+      // above y 14 nothing can hide the bird: only that first stretch of the line matters
+      const Le = dy > 0 ? Math.min(L, ((14 - by) * L) / dy) : L, ex = bx + (dx * Le) / L, ez = bz + (dz * Le) / L;
+      const x0 = Math.min(bx, ex), x1 = Math.max(bx, ex), z0 = Math.min(bz, ez), z1 = Math.max(bz, ez);
+      for (let i = 0; i < occ.length; i += 4) {
+        const r = occ[i + 3];
+        if (occ[i] < x0 - r || occ[i] > x1 + r || occ[i + 2] < z0 - r || occ[i + 2] > z1 + r) continue;
+        const ox = occ[i] - bx, oy = occ[i + 1] - by, oz = occ[i + 2] - bz;
         if (ox * ox + oy * oy + oz * oz < r * r) continue;          // the perch tree itself
         const s = (ox * dx + oy * dy + oz * dz) / L;
-        if (s <= 0 || s >= L) continue;
+        if (s <= 0 || s >= Le + r) continue;
         const px = ox - (dx * s) / L, py = oy - (dy * s) / L, pz = oz - (dz * s) / L;
         if (px * px + py * py + pz * pz < r * r) return false;
       }
       return true;
     };
-    const cand = trees.filter(ok).map((t) => ({ t, k: t.n + t.sy * 4 + R() * 3 })).sort((a, b) => b.k - a.k);
-    const take = (t, vis) => { if (perches.length < 8 && perches.every((p) => Math.hypot(p.x - t.x, p.z - t.z) >= 12)) perches.push({ x: t.x, y: t.y + 0.02, z: t.z, busy: -1, seen: vis }); };
-    // at least half the perches where the home view can see them (the first pairs start there),
-    // the rest anywhere in the forest
-    const near = cand.filter(({ t }) => seen(t)).sort((a, b) => Math.hypot(a.t.x - C.x, a.t.z - C.z) - Math.hypot(b.t.x - C.x, b.t.z - C.z));
-    for (const { t } of near) if (perches.length < 5) take(t, true);     // nearest seen treetops first
-    for (const { t } of cand) take(t, seen(t));
-    if (perches.length < PAIRS + 1) return none('not enough treetops for parrots');
-    canopy = trees;                                        // for the clearance checks
+    // the pair sits side by side, SPREAD apart, facing any way: keep the slots out of the
+    // neighbours' crowns, closing the pair up (down to 0.6 apart) where they are crowded
+    const spacing = (t) => {
+      const list = nearOcc(t.x, t.z, 3);
+      for (const half of [0.5, 0.4, 0.3]) {
+        let w = 1e9;
+        for (let a = 0; a < 12; a++) { const an = (a / 12) * TAU; w = Math.min(w, crownClear(list, t.x + Math.cos(an) * half, t.y + 0.5, t.z + Math.sin(an) * half)); }
+        if (w > 0) return half;
+      }
+      return 0;
+    };
+    const cand = canopy.filter(ok).map((t) => ({ t, k: t.n + t.sy * 4 + R() * 3 })).sort((a, b) => b.k - a.k);
+    const free = (t) => perches.length < 8 && perches.every((p) => Math.hypot(p.x - t.x, p.z - t.z) >= 12);
+    const take = (t, vis) => {
+      const half = spacing(t);
+      if (half > 0) perches.push({ x: t.x, y: t.y + 0.02, z: t.z, busy: -1, seen: vis, half });
+    };
+    // at least half the perches where the home view can see them, nearest first; the rest
+    // anywhere in the forest (cheap tests first: the line-of-sight test is the costly one)
+    const byCam = cand.slice().sort((a, b) => Math.hypot(a.t.x - C.x, a.t.z - C.z) - Math.hypot(b.t.x - C.x, b.t.z - C.z));
+    for (const { t } of byCam) { if (perches.length >= 5) break; if (free(t) && seen(t)) take(t, true); }
+    for (const { t } of cand) if (free(t)) take(t, seen(t));
   }
 
   // ---------- flight arcs between perches (precomputed: no allocation in flight) ----------
-  const SAMPLES = 60, FLY_SPEED = 4.2;
+  const SAMPLES = 24, FLY_SPEED = 4.2, MATE_SIDE = 0.6;
+  let arcs = [];
   const arcKey = (a, b) => a * perches.length + b;
-  const arcs = [];
-  function topAt(x, z) {                                  // ground or treetop under (x, z)
-    let h = te(x, z) + 1.5;
-    for (let i = 0; i < canopy.length; i++) { const t = canopy[i]; if (Math.abs(t.x - x) < 2.2 && Math.abs(t.z - z) < 2.2) h = Math.max(h, t.y); }
-    return h;
-  }
-  for (let a = 0; a < perches.length; a++) for (let b = 0; b < perches.length; b++) {
-    const A = perches[a], B = perches[b], d = Math.hypot(B.x - A.x, B.z - A.z);
-    if (a === b || d < 10 || d > 35) { arcs[arcKey(a, b)] = null; continue; }
-    const side = (a + b) % 2 ? 1 : -1, bulge = 0.12 * d * side;
-    // hump high enough to clear the canopy and the ground by 1.6 along the way
-    let hump = 2.2;
-    for (const off of [0, 0.6]) for (let i = 1; i < SAMPLES; i++) {           // leader and mate
-      const u = i / SAMPLES, s = Math.sin(Math.PI * u);
-      const px = A.x + (B.x - A.x) * u - ((B.z - A.z) / d) * (bulge * s + off), pz = A.z + (B.z - A.z) * u + ((B.x - A.x) / d) * (bulge * s + off);
-      const base = A.y + (B.y - A.y) * u;
-      const near = Math.min(Math.hypot(px - A.x, pz - A.z), Math.hypot(px - B.x, pz - B.z));
-      if (near > 2.5) hump = Math.max(hump, (topAt(px, pz) + 1.6 - base) / s);
-    }
-    const arc = { a, b, d, bulge, hump, T: (d * 1.15) / FLY_SPEED + 1.6 };
-    // drop an arc whose take-off or landing would brush a neighbouring tree's crown
-    arcs[arcKey(a, b)] = endClearance(arc) > 0.15 ? arc : null;
-  }
-  // nearest approach to a neighbouring crown (sphere surface) within 2.5 of either perch, both birds
-  function endClearance(arc) {
-    const A = perches[arc.a], B = perches[arc.b], q = { x: 0, y: 0, z: 0 };
-    let worst = 1e9;
-    for (const side of [0, 0.6]) for (let i = 1; i < 60; i++) {
-      arcPoint(arc, i / 60, side, q);
-      const dA = Math.hypot(q.x - A.x, q.z - A.z), dB = Math.hypot(q.x - B.x, q.z - B.z);
-      if (Math.min(dA, dB) >= 2.5) continue;
-      const P = dA < dB ? A : B, by = q.y + 0.5;
-      for (let o = 0; o < occ.length; o += 4) {
-        if (Math.hypot(occ[o] - P.x, occ[o + 2] - P.z) < 1.8) continue;
-        worst = Math.min(worst, Math.hypot(q.x - occ[o], by - occ[o + 1], q.z - occ[o + 2]) - occ[o + 3]);
-      }
-    }
-    return worst;
-  }
-  function arcPoint(arc, u, side, out) {                  // position on the arc at 0..1, mate offset by side
+  function arcPoint(arc, u, side, out) {                    // position on the arc at 0..1, mate offset by side
     const A = perches[arc.a], B = perches[arc.b], s = Math.sin(Math.PI * u);
     const nx = -(B.z - A.z) / arc.d, nz = (B.x - A.x) / arc.d;
     out.x = A.x + (B.x - A.x) * u + nx * (arc.bulge * s + side);
@@ -2174,23 +2199,85 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
     out.y = A.y + (B.y - A.y) * u + arc.hump * s + 0.3 * Math.abs(side) * s;
     return out;
   }
-
-  // on a treetop the home view can see, a pair faces the camera, side by side across the view
-  function faceYaw(q, other) {
-    const P = perches[q];
-    return P.seen ? Math.atan2(C.x - P.x, C.z - P.z) : other;
+  // the hump that keeps both birds' arc line 1.6 over the treetops (and ground) between the
+  // ends; then the nearest approach to a neighbouring crown in the first and last 2.5
+  // One curve per pair of perches, flown either way (the return trip mirrors the bulge), so
+  // the leader's line and the mate's on either side are all checked here.
+  const SIDES = [0, MATE_SIDE, -MATE_SIDE];
+  function makeArc(a, b, nearA, nearB) {
+    const A = perches[a], B = perches[b], d = Math.hypot(B.x - A.x, B.z - A.z);
+    const bulge = 0.12 * d * ((a + b) % 2 ? 1 : -1);
+    let hump = 2.2;
+    for (const off of SIDES) for (let i = 1; i < SAMPLES; i++) {
+      const u = i / SAMPLES, s = Math.sin(Math.PI * u);
+      const px = A.x + (B.x - A.x) * u - ((B.z - A.z) / d) * (bulge * s + off), pz = A.z + (B.z - A.z) * u + ((B.x - A.x) / d) * (bulge * s + off);
+      // the treetops within 3.1 of the sample (wider than the samples' spacing), so none is missed
+      if (Math.min(Math.hypot(px - A.x, pz - A.z), Math.hypot(px - B.x, pz - B.z)) > 2.5 - d / SAMPLES) hump = Math.max(hump, (topWide(px, pz) + 1.6 - (A.y + (B.y - A.y) * u)) / s);
+    }
+    const arc = { a, b, d, bulge, hump, T: (d * 1.15 + hump * 1.2) / FLY_SPEED + 1.6, end: 0 };
+    arc.end = endClearance(arc, nearA, nearB, 20);
+    return arc;
   }
+  const q = { x: 0, y: 0, z: 0 };
+  function endClearance(arc, nearA, nearB, n) {           // n samples over each end's first 2.6
+    const A = perches[arc.a], B = perches[arc.b], span = Math.min(0.5, 2.8 / arc.d);
+    let worst = 1e9;
+    for (const side of SIDES) for (let i = 1; i <= 2 * n; i++) {
+      arcPoint(arc, i <= n ? (span * i) / n : 1 - (span * (i - n)) / n, side, q);
+      const dA = Math.hypot(q.x - A.x, q.z - A.z), dB = Math.hypot(q.x - B.x, q.z - B.z);
+      if (Math.min(dA, dB) >= 2.5) continue;
+      worst = Math.min(worst, dA < dB ? crownClear(nearA, q.x, q.y + 0.5, q.z) : crownClear(nearB, q.x, q.y + 0.5, q.z));
+    }
+    return worst;
+  }
+  {
+    // decide per unordered pair of perches: both directions or neither (no one-way trips)
+    const nearL = perches.map((P) => nearOcc(P.x, P.z, 3));
+    const n = perches.length, link = [];
+    for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
+      const d = Math.hypot(perches[b].x - perches[a].x, perches[b].z - perches[a].z);
+      if (d < 10 || d > 35) continue;
+      const ab = makeArc(a, b, nearL[a], nearL[b]);
+      if (ab.end <= 0.15) continue;
+      link.push(ab, { a: b, b: a, d: ab.d, bulge: -ab.bulge, hump: ab.hump, T: ab.T, end: ab.end });
+    }
+    // drop perches left without a way out; then, while enough remain, perches that lead
+    // to a single neighbour only
+    let keep = perches.map(() => true);
+    const degree = () => { const deg = perches.map(() => 0); for (const arc of link) if (keep[arc.a] && keep[arc.b]) deg[arc.a]++; return deg; };
+    let deg = degree();
+    perches.forEach((_, i) => { if (deg[i] === 0) keep[i] = false; });
+    for (;;) {
+      deg = degree();
+      const live = keep.filter(Boolean).length, leaf = deg.findIndex((v, i) => keep[i] && v < 2);
+      if (leaf < 0 || live <= PAIRS + 1) break;
+      keep[leaf] = false;
+      deg = degree();
+      perches.forEach((_, i) => { if (keep[i] && deg[i] === 0) keep[i] = false; });
+    }
+    const index = [];
+    const kept = perches.filter((_, i) => { if (keep[i]) index[i] = index.filter((v) => v !== undefined).length; return keep[i]; });
+    perches = kept;
+    arcs = [];
+    for (const arc of link) if (keep[arc.a] && keep[arc.b]) { arc.a = index[arc.a]; arc.b = index[arc.b]; arcs[arcKey(arc.a, arc.b)] = arc; }
+    if (perches.length < PAIRS + 1) return none('not enough treetops for parrots');
+  }
+  const outDegree = (q0) => { let k = 0; for (let b = 0; b < perches.length; b++) if (arcs[arcKey(q0, b)]) k++; return k; };
+
   // ---------- pairs ----------
   const R = makeRng(9091);
   const pairs = [];
+  const camYaw = (q0) => { const P = perches[q0], c = kit.camera.position; return Math.atan2(c.x - P.x, c.z - P.z); };   // face the camera
   for (let p = 0; p < PAIRS; p++) {
-    let from = 0;                                          // the first free perch
-    while (from < perches.length && perches[from].busy !== -1) from++;
+    let from = 0;                                          // the first free perch with a way out
+    while (from < perches.length && (perches[from].busy !== -1 || outDegree(from) === 0)) from++;
+    if (from >= perches.length) return none('not enough treetops for parrots');
     perches[from].busy = p;
-    pairs.push({ phase: 'perched', from, to: -1, arc: null, t: 0, wait: 4 + p * 7 + R() * 3, look: R() * TAU, yaw: faceYaw(from, R() * TAU), landYaw: 0 });
+    pairs.push({ phase: 'perched', from, to: -1, arc: null, t: 0, wait: 4 + p * 7 + R() * 3, look: R() * TAU, lookK: 1,
+      yaw: Math.atan2(C.x - perches[from].x, C.z - perches[from].z), landYaw: 0, landSet: false, force: false, next: -1 });
   }
   const birdState = [];
-  for (let i = 0; i < N; i++) birdState.push({ phase: 'perched', x: 0, y: 0, z: 0 });
+  for (let i = 0; i < N; i++) birdState.push({ phase: 'perched', x: 0, y: 0, z: 0, yaw: 0, ref: NaN, dy: 0 });
 
   let fair = true;
   function weather(env) {
@@ -2198,22 +2285,23 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
     const good = env.rain < 0.4 && env.night < 0.5 && env.wind < 0.8 && env.snow < 0.3;
     fair = fair ? !bad : good;
   }
-  function pickDestination(p, R0) {
+  function pickDestination(p) {
     const pr = pairs[p];
     let best = -1, bestK = -1;
     for (let b = 0; b < perches.length; b++) {
       const arc = arcs[arcKey(pr.from, b)];
       if (!arc || perches[b].busy !== -1) continue;
-      const k = R0() + (arc.d < 25 ? 0.3 : 0);
+      const k = R() + (arc.d < 25 ? 0.3 : 0);
       if (k > bestK) { bestK = k; best = b; }
     }
     return best;
   }
   function takeOff(p) {
-    const pr = pairs[p], b = pickDestination(p, R);
+    const pr = pairs[p], b = pr.next >= 0 && perches[pr.next].busy === -1 && arcs[arcKey(pr.from, pr.next)] ? pr.next : pickDestination(p);
+    pr.next = -1;
     if (b < 0) return false;
-    pr.to = b; pr.arc = arcs[arcKey(pr.from, b)]; pr.t = 0; pr.phase = 'flying';
-    pr.landYaw = faceYaw(b, Math.atan2(perches[b].x - perches[pr.from].x, perches[b].z - perches[pr.from].z));
+    pr.to = b; pr.arc = arcs[arcKey(pr.from, b)]; pr.t = 0; pr.phase = 'flying'; pr.force = false;
+    pr.landYaw = Math.atan2(perches[b].x - perches[pr.from].x, perches[b].z - perches[pr.from].z); pr.landSet = false;
     perches[b].busy = p; perches[pr.from].busy = -1;
     return true;
   }
@@ -2222,26 +2310,26 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
   const M4 = new Matrix4(), Q = new Quaternion(), E = new Euler(), V3 = new Vector3(), S3 = new Vector3();
   const pa = { x: 0, y: 0, z: 0 }, pb = { x: 0, y: 0, z: 0 };
   const ease = (k) => k * k * (3 - 2 * k);
-  const MATE = 0.5, UNFOLD = 0.7, PERCH_PITCH = 0.55;   // perched: upright, tail hanging
+  const MATE = 0.5, UNFOLD = 0.7, PERCH_PITCH = 0.55, PERCH_X = 0.4, SETTLE = 2.2;   // perched: upright, folded
   function placeBird(i, x, y, z, yaw, pitch, roll, fold) {
-    const sx = SIZE * (0.4 + 0.6 * fold);
+    const sx = SIZE * (PERCH_X + (1 - PERCH_X) * fold);
     E.set(pitch, yaw, roll, 'YXZ');
     M4.compose(V3.set(x, y, z), Q.setFromEuler(E), S3.set(sx, SIZE, SIZE));
     birds.setMatrixAt(i, M4);
-    const s = birdState[i]; s.x = x; s.y = y; s.z = z;
+    const s = birdState[i]; s.x = x; s.y = y; s.z = z; s.yaw = yaw;
   }
   // where bird k (0 = leader, 1 = mate) of pair p sits on perch q, facing yaw
   const slot = { x: 0, y: 0, z: 0 };
-  function perchSlot(k, q, yaw) {
-    const P = perches[q], side = k ? 0.5 : -0.5, c = Math.cos(yaw), s = Math.sin(yaw);
+  function perchSlot(k, q0, yaw) {
+    const P = perches[q0], side = k ? P.half : -P.half, c = Math.cos(yaw), s = Math.sin(yaw);
     slot.x = P.x + c * side; slot.y = P.y + 0.5; slot.z = P.z - s * side;
     return slot;
   }
   const wrap = (a) => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
-  function perchBird(p, k, q, t) {
+  function perchBird(p, k, q0, t) {
     const pr = pairs[p];
-    const look = Math.sin(t * 0.6 + pr.look + k * 2.1) * 0.35 * smoothstep(0.2, 0.8, Math.sin(t * 0.23 + pr.look + k));
-    perchSlot(k, q, pr.yaw);
+    const look = Math.sin(t * 0.6 + pr.look + k * 2.1) * 0.35 * smoothstep(0.2, 0.8, Math.sin(t * 0.23 + pr.look + k)) * pr.lookK;
+    perchSlot(k, q0, pr.yaw);
     placeBird(p * 2 + k, slot.x, slot.y, slot.z, pr.yaw + look, -PERCH_PITCH, 0, 0);
     birdState[p * 2 + k].phase = 'perched';
   }
@@ -2249,15 +2337,20 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
   function flyBird(p, k, tt) {
     const pr = pairs[p], arc = pr.arc, T = arc.T, i = p * 2 + k;
     if (tt <= 0) { perchBird(p, k, arc.a, clock); return; }
-    if (tt >= T) { const y0 = pr.yaw; pr.yaw = pr.landYaw; perchBird(p, k, arc.b, clock); pr.yaw = y0; return; }
-    const u = ease(tt / T), u2 = ease(Math.min(T, tt + 0.08) / T), side = k ? 0.6 : 0;
+    if (tt >= T) { const y0 = pr.yaw, k0 = pr.lookK; pr.yaw = pr.landYaw; pr.lookK = 0; perchBird(p, k, arc.b, clock); pr.yaw = y0; pr.lookK = k0; return; }
+    const u = ease(tt / T), u2 = ease(Math.min(T, tt + 0.08) / T), side = k ? MATE_SIDE : 0;
     arcPoint(arc, u, side, pa); arcPoint(arc, u2, side, pb);
     const dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z, hd = Math.hypot(dx, dz);
     const fold = Math.min(smoothstep(0, UNFOLD, tt), smoothstep(T, T - UNFOLD, tt));
     const leaving = tt < T / 2, py = leaving ? pr.yaw : pr.landYaw;
-    perchSlot(k, leaving ? arc.a : arc.b, py);            // blend from / into the perch slot while folded
-    const fy = hd > 1e-4 ? Math.atan2(dx, dz) : py;
-    const yaw = py + wrap(fy - py) * fold;
+    perchSlot(k, leaving ? arc.a : arc.b, py);              // blend from / into the perch slot while folded
+    const fy = hd > 1e-4 ? Math.atan2(dx, dz) : py, bs = birdState[i];
+    // turn from the perched heading toward the flight heading, the short way round, but keep
+    // turning the same way once started (wrap() alone flips side when the gap passes half a turn)
+    let dyaw = wrap(fy - py);
+    if (bs.ref === py && Math.abs(dyaw - bs.dy) > Math.PI) dyaw += dyaw < bs.dy ? TAU : -TAU;
+    bs.ref = py; bs.dy = dyaw;
+    const yaw = py + dyaw * fold;
     const pitch = -Math.atan2(dy, Math.max(hd, 1e-4)) * 0.7 * fold - PERCH_PITCH * (1 - fold);
     const roll = -Math.sign(arc.bulge) * 0.4 * Math.sin(Math.PI * u) * fold;
     const x = slot.x + (pa.x - slot.x) * fold, y = slot.y + (pa.y + 0.5 - slot.y) * fold, z = slot.z + (pa.z - slot.z) * fold;
@@ -2273,15 +2366,30 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
       const pr = pairs[p];
       if (pr.phase === 'perched') {
         pr.wait -= dt;
-        if (pr.wait <= 0 && fair && takeOff(p)) { /* now flying */ }
-        else if (pr.wait <= 0) pr.wait = 2 + R() * 3;
+        const going = (fair || pr.force) && pr.wait < SETTLE;     // settle the look-around before leaving
+        pr.lookK += ((going ? 0 : 1) - pr.lookK) * Math.min(1, dt * (going ? 4 : 1.5));
+        // and turn on the perch toward the tree they are about to fly to
+        if (going && pr.next < 0) pr.next = pickDestination(p);
+        if (!going) pr.next = -1;
+        if (pr.next >= 0) {
+          arcPoint(arcs[arcKey(pr.from, pr.next)], 0.08, 0, pa);
+          const P = perches[pr.from];
+          const gap = wrap(Math.atan2(pa.x - P.x, pa.z - P.z) - pr.yaw);    // at most 1.3 rad/s, easing in
+          pr.yaw += Math.sign(gap) * Math.min(Math.abs(gap) * Math.min(1, dt * 2.5), 1.3 * dt);
+        }
+        if (pr.wait <= 0 && (fair || pr.force) && pr.lookK < 0.08 && takeOff(p)) { /* now flying */ }
+        else if (pr.wait <= 0 && !(fair || pr.force)) pr.wait = 2 + R() * 3;
+        else if (pr.wait <= 0 && pr.lookK >= 0.08) pr.wait = 0;
+        else if (pr.wait <= -3) pr.wait = 2 + R() * 3;               // no free tree in reach: try again later
         if (pr.phase === 'perched') { perchBird(p, 0, pr.from, clock); perchBird(p, 1, pr.from, clock); continue; }
       }
       pr.t += dt;
+      // half way, look where the camera is now: the pair lands facing it
+      if (!pr.landSet && pr.t >= pr.arc.T / 2) { pr.landYaw = camYaw(pr.to); pr.landSet = true; }
       flyBird(p, 0, pr.t);
       flyBird(p, 1, pr.t - MATE);
       if (pr.t >= pr.arc.T + MATE) {
-        pr.yaw = pr.landYaw;
+        pr.yaw = pr.landYaw; pr.lookK = 0;
         pr.from = pr.to; pr.to = -1; pr.arc = null; pr.phase = 'perched'; pr.wait = 10 + R() * 15;
         perchBird(p, 0, pr.from, clock); perchBird(p, 1, pr.from, clock);
       }
@@ -2294,23 +2402,28 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
     state() {
       return {
         fair,
-        birds: birdState.map((b) => ({ phase: b.phase, x: +b.x.toFixed(2), y: +b.y.toFixed(2), z: +b.z.toFixed(2) })),
+        birds: birdState.map((b) => ({ phase: b.phase, x: +b.x.toFixed(2), y: +b.y.toFixed(2), z: +b.z.toFixed(2), yaw: +b.yaw.toFixed(3) })),
         pairs: pairs.map((p) => ({ phase: p.phase, from: p.from, to: p.to, t: +p.t.toFixed(2) })),
         perches: perches.map((p) => [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), p.seen ? 1 : 0]),
       };
     },
-    /** Send a pair (0..2, default: the first one perched) off to another tree now. Returns true or a reason. */
+    /** Send a pair (0..2, default: the first one perched) off to another tree (after it settles, within a second). Returns true or a reason. */
     fly(pair) {
       let p;
       if (pair === undefined) {
-        p = pairs.findIndex((q) => q.phase === 'perched');
+        p = pairs.findIndex((q0) => q0.phase === 'perched' && !q0.force);
         if (p < 0) return 'already flying';
       } else if (typeof pair === 'number' && Number.isInteger(pair) && pair >= 0 && pair < PAIRS) p = pair;
       else return 'no such pair';
-      if (pairs[p].phase !== 'perched') return 'already flying';
-      return takeOff(p) || 'no free tree within reach';
+      const pr = pairs[p];
+      if (pr.phase !== 'perched' || pr.force) return 'already flying';
+      let any = false;
+      for (let b = 0; b < perches.length; b++) if (arcs[arcKey(pr.from, b)] && perches[b].busy === -1) any = true;
+      if (!any) return 'no free tree within reach';
+      pr.force = true; pr.wait = Math.min(pr.wait, SETTLE);
+      return true;
     },
-    /** Worst clearance (world units) of every possible arc above the ground and the treetops under it. */
+    /** Worst clearances of every arc (over the treetops; at take-off and landing against the neighbours' crowns) and the perch graph. */
     check() {
       let worst = 1e9, where = null, n = 0, nan = 0, endWorst = 1e9, endWhere = null;
       for (let j = 0; j < arcs.length; j++) {
@@ -2318,25 +2431,28 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
         if (!arc) continue;
         n++;
         const A = perches[arc.a], B = perches[arc.b];
-        for (const side of [0, 0.6]) for (let i = 1; i < 60; i++) {
+        for (const side of [0, MATE_SIDE]) for (let i = 1; i < 60; i++) {
           arcPoint(arc, i / 60, side, pa);
           if (!isFinite(pa.x + pa.y + pa.z)) nan++;
-          const dA = Math.hypot(pa.x - A.x, pa.z - A.z), dB = Math.hypot(pa.x - B.x, pa.z - B.z);
-          if (Math.min(dA, dB) < 2.5) {                             // take-off and landing: clear of the neighbours' crowns
-            const P = dA < dB ? A : B, by = pa.y + 0.5;
-            for (let o = 0; o < occ.length; o += 4) {
-              if (Math.hypot(occ[o] - P.x, occ[o + 2] - P.z) < 1.8) continue;   // the perch tree itself
-              const d = Math.hypot(pa.x - occ[o], by - occ[o + 1], pa.z - occ[o + 2]) - occ[o + 3];
-              if (d < endWorst) { endWorst = d; endWhere = [arc.a, arc.b, +pa.x.toFixed(1), +pa.z.toFixed(1)]; }
-            }
-            continue;
-          }
-          const clear = pa.y + 0.5 - topAt(pa.x, pa.z);      // above the treetops (or 1.5 over open ground)
+          if (Math.min(Math.hypot(pa.x - A.x, pa.z - A.z), Math.hypot(pa.x - B.x, pa.z - B.z)) < 2.5) continue;
+          const clear = pa.y + 0.5 - topAt(pa.x, pa.z);
           if (clear < worst) { worst = clear; where = [arc.a, arc.b, +pa.x.toFixed(1), +pa.z.toFixed(1)]; }
         }
+        const e = endClearance(arc, nearOcc(A.x, A.z, 3), nearOcc(B.x, B.z, 3), 40);
+        if (e < endWorst) { endWorst = e; endWhere = [arc.a, arc.b]; }
       }
-      return { arcs: n, perches: perches.length, worstClearance: +worst.toFixed(2), where, endCrownClear: +endWorst.toFixed(2), endWhere, nan,
-        ok: n > 0 && nan === 0 && worst > 0.5 && endWorst > 0 };
+      const deg = perches.map((_, a) => outDegree(a));
+      let oneWay = 0;
+      for (let a = 0; a < perches.length; a++) for (let b = 0; b < perches.length; b++) if (!!arcs[arcKey(a, b)] !== !!arcs[arcKey(b, a)]) oneWay++;
+      const isolated = deg.filter((v) => v === 0).length, single = deg.filter((v) => v === 1).length;
+      let slotWorst = 1e9;
+      for (const P of perches) for (let s = -1; s <= 1; s += 2) for (let a = 0; a < 12; a++) {
+        const an = (a / 12) * TAU;
+        slotWorst = Math.min(slotWorst, crownClear(nearOcc(P.x, P.z, 3), P.x + Math.cos(an) * P.half * s, P.y + 0.5, P.z + Math.sin(an) * P.half * s));
+      }
+      return { arcs: n, perches: perches.length, degrees: deg, isolated, singleExit: single, oneWay,
+        worstClearance: +worst.toFixed(2), where, endCrownClear: +endWorst.toFixed(2), endWhere, slotCrownClear: +slotWorst.toFixed(2), nan,
+        ok: n > 0 && nan === 0 && worst > 0.5 && endWorst > 0 && isolated === 0 && oneWay === 0 && slotWorst > 0 };
     },
   };
 
@@ -6624,7 +6740,7 @@ varying vec3 vSP; varying vec3 vSN;${e.detail?" varying vec3 vOP;":""}`).replace
   transformed += wl * amt;
   transformed.y -= amt*amt*0.08/(hgt+0.5);
   `:""}
-  ${e.flap?"{ float otiFl = 1.0;\n  #ifdef USE_INSTANCING\n    float otiRa = length(instanceMatrix[0].xyz) / max(length(instanceMatrix[1].xyz), 1e-5);\n    otiFl = clamp((otiRa - 0.5) * 2.5, 0.0, 1.0);\n    if (otiRa < 0.999) {\n      float otiFo = 1.0 - otiFl;\n      transformed.x /= max(otiRa, 0.05);\n      float otiW = max(abs(transformed.x) - 0.2, 0.0), otiS = sign(transformed.x), otiB = smoothstep(0.0, 0.03, otiW) * otiFo;\n      transformed.x = otiS * (0.2 - 0.06 * otiB + otiW * (1.0 - 1.04 * otiFo));\n      transformed.z -= otiW * 0.62 * otiFo;\n      transformed.y += (0.1 + otiW * 0.03) * otiB;\n      float otiHk = smoothstep(0.12, 0.26, transformed.z) * otiFo * 0.8;\n      vec2 otiHp = transformed.yz - vec2(0.1, 0.16);\n      float otiC = cos(otiHk), otiSn = sin(otiHk);\n      transformed.yz = vec2(0.1, 0.16) + vec2(otiC * otiHp.x - otiSn * otiHp.y, otiSn * otiHp.x + otiC * otiHp.y);\n    }\n  #endif\n  transformed.y += sin(uTime*9.0 + ph*3.0) * abs(transformed.x) * 0.7 * otiFl; }":""}
+  ${e.flap?"{ float otiFl = 1.0, otiAx = abs(transformed.x);\n  #ifdef USE_INSTANCING\n    float otiRa = length(instanceMatrix[0].xyz) / max(length(instanceMatrix[1].xyz), 1e-5);\n    otiFl = clamp((otiRa - 0.5) * 2.5, 0.0, 1.0);\n    if (otiRa < 0.999) {\n      float otiFo = 1.0 - otiFl, otiIr = 1.0 / max(otiRa, 0.05);\n      float otiW = max(otiAx - 0.2, 0.0), otiS = sign(transformed.x), otiB = smoothstep(0.0, 0.03, otiW) * otiFo;\n      transformed.x = otiS * (min(otiAx, 0.2) - 0.06 * otiB + otiW * (1.0 - 1.04 * otiFo)) * otiIr;\n      transformed.z -= otiW * 0.62 * otiFo;\n      transformed.y += (0.1 + otiW * 0.03) * otiB;\n      float otiHk = smoothstep(0.12, 0.26, transformed.z) * otiFo * 0.8;\n      vec2 otiHp = transformed.yz - vec2(0.1, 0.16);\n      float otiC = cos(otiHk), otiSn = sin(otiHk);\n      transformed.yz = vec2(0.1, 0.16) + vec2(otiC * otiHp.x - otiSn * otiHp.y, otiSn * otiHp.x + otiC * otiHp.y);\n      #ifndef FLAT_SHADED\n        vec3 otiN = vec3(objectNormal.x * otiIr, objectNormal.y, objectNormal.z);\n        otiN.yz = vec2(otiC * otiN.y - otiSn * otiN.z, otiSn * otiN.y + otiC * otiN.z);\n        vNormal = normalize(normalMatrix * (mat3(instanceMatrix) * otiN));\n      #endif\n    }\n  #endif\n  transformed.y += sin(uTime*9.0 + ph*3.0) * otiAx * 0.7 * otiFl; }":""}
 }`).replace("#include <project_vertex>",`#include <project_vertex>
 {
   vec4 sp = vec4(transformed, 1.0);
