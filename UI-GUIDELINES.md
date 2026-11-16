@@ -43,10 +43,8 @@ Defined on `:root`. Components use `var(--…)`; a raw colour in a component rul
 
 Illustration colours are the only exceptions and stay inline: the time slider's day gradient
 (`#142048`, `#3a3f7a`, `#ff9a6a`, `#8fd0ff`), the loading screen's sky gradient (`#b3cde0`,
-`#9cb6c8`, `#7593a9`, sampled from the scene's opening frame), its wordmark (sea blues `#1d5a8c`
-and `#2974a6`, volcano rock `#8d8378`, `#6e6560`, `#4a4442`, `#2a2120`, lava `#ff7a3c` and
-`#ffc46b`, palm `#7a5a3a`, `#2f7a35`, `#63ad45`, ink `#13202f`) and its progress track (ink at
-16%), and the failure screen's `#1d4f7a`.
+`#9cb6c8`, `#7593a9`, sampled from the scene's opening frame), its logo (an embedded picture
+with its own colours) and its progress track (ink at 16%), and the failure screen's `#1d4f7a`.
 
 ## Glass surfaces
 
@@ -209,15 +207,19 @@ a camera you moved eases up to 9.5 above land so it stays over the treetops.
 
 ### Loading and failure screens
 Loading: a pale sky gradient matched to the scene's opening frame (so the cross-fade is not a
-jolt) and, centred on it with 12 px gaps, the wordmark, the line "Shaping a tiny island…" (15/400,
+jolt) and, centred on it with 12 px gaps, the logo, the line "Shaping a tiny island…" (15/400,
 `--ink`: 7.8:1 to 10:1 on the gradient behind it, 5.1:1 at its darkest corner) and a progress bar.
-- **Wordmark:** one static inline SVG (`.ld-name`, `clamp(220px, 64vmin, 380px)` wide, 480 x 190
-  frame, `role="img"`, `aria-label="One Tiny Island"`). Low-poly block capitals with straight
-  edges only: "ONE TINY" small in ink over a large "ISLAND" in two sea blues (a jagged lighter
-  facet across the top, clipped to the letters) with an ink extrusion down and to the right. The
-  A is the volcano (three rock facets, crater, lava) and a palm stands on the foot of the L. The
-  blues hold at least 3:1 on the gradient behind them. It is the only place the name is drawn
-  this way; the panel title stays plain text.
+- **Logo:** the One Tiny Island logo (`img.ld-name`, `clamp(240px, 78vmin, 460px)` wide,
+  `alt="One Tiny Island"`, `width`/`height` set so nothing shifts when it decodes): low-poly
+  letters, "ONE TINY" in sand, wood and stone over a large turquoise "ISLAND" with a waterfall,
+  a small volcano, palms and two macaws, on a strip of beach. It is a 1096 x 688 WebP with a
+  transparent background, embedded as a `data:` URI (about 85 KB; the page still makes no
+  request), cut out of the white-background original so it sits on the sky gradient. The scene
+  build waits until it has decoded (250 ms at most) so it is on screen before the build blocks
+  the page. The same picture is `docs/logo.png` (README) and, on white, `docs/social-preview.jpg`
+  (the repository's social card). It is the only place the logo appears in the page; the panel
+  title stays plain text. It is a picture of the name, so it has no contrast requirement of its
+  own: the line under it carries the text.
 - **Progress bar:** `.ld-bar`, `clamp(160px, 46vmin, 260px)` wide, 8 px tall, radius 4 (the
   slider track's size), track ink at 16%, fill `--ink`, `aria-hidden` (the line above it says
   what is happening). The scene build blocks the main thread, so the bar cannot measure anything:
@@ -226,10 +228,10 @@ jolt) and, centred on it with 12 px gaps, the wordmark, the line "Shaping a tiny
   loader fades.
 - Only `transform` and `opacity` are animated, on HTML elements, so the compositor keeps the bar
   moving while the scene build blocks the main thread; never animate anything else here, and
-  never animate elements inside the SVG. Any frame of it must look finished, because a fast
+  never animate the logo. Any frame of it must look finished, because a fast
   machine shows it for a fraction of a second: no minimum display time. It fades out over 0.6 s
   once the first scene frame has been drawn, then is removed. With reduced motion there is no
-  bar (the wordmark and the line stay) and the loader disappears at once.
+  bar (the logo and the line stay) and the loader disappears at once.
 
 Without JavaScript a `<noscript>` style hides the loader, so only the noscript message shows and
 nothing animates. Failure: dark radial gradient, bold title + one friendly line in `--muted`; the
@@ -259,7 +261,7 @@ Check every UI change at 1280 x 720, 390 x 844 and 320 x 568.
 
 `prefers-reduced-motion: reduce` turns all of these off: no transitions on the panel, toast,
 hidden UI, switch, restore button or UI layer, no loading fade (the loader disappears at once),
-and no loading bar (the wordmark and the line are enough). Auto-rotate also starts off.
+and no loading bar (the logo and the line are enough). Auto-rotate also starts off.
 Any new animation needs its reduced-motion rule in the same change.
 
 ## Accessibility
@@ -281,7 +283,7 @@ Any new animation needs its reduced-motion rule in the same change.
   (snow cover at noon, fog, from above and from the default camera, desktop and phone), not over
   the night sky. Measured worst cases now: chip muted text 4.93:1 (was 3.18 with `--glass` .58 and
   `--muted` .66), chip weather name 7.42, toast 6.44, panel muted text 5.60–6.71, Erupt FAB icon
-  about 4.6, loading text 7.8–10 (5.1 at the gradient's darkest corner), loading wordmark blues 3.1 and 4.4. Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
+  about 4.6, loading text 7.8–10 (5.1 at the gradient's darkest corner). Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
   hover and focus).
 - **Keyboard:** Tab reaches everything visible, then the island view. **H** hides or shows the UI,
   **Esc** closes the panel. Enter / Space activate buttons, arrows move the slider. With the island

@@ -1,4 +1,4 @@
-# One Tiny Island
+<h1 align="center"><img src="docs/logo.png" alt="One Tiny Island" width="560"></h1>
 
 A tiny procedural 3D island diorama that lives in a single HTML file. Open it, drag it around, and watch the weather roll in.
 

@@ -12,15 +12,16 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, a
   - `<script id="parrots">`: readable `parrots` plugin (three pairs of red-and-blue macaws).
   - one huge `<script>`: an esbuild-minified IIFE of three.js r187 plus the app. **No sources exist.**
   - `<script id="hints">`: one-time "Drag to look around" toast (`localStorage['oti-hint-drag']`).
-- Loading screen (`#loading`, before the scripts): pale sky gradient matched to the opening frame, a static inline SVG wordmark (`.ld-name`: low-poly capitals, the A of ISLAND is the volcano, a palm on the L), the line "Shaping a tiny island…" and a progress bar (`.ld-bar`, two `<i>` fills). The bar is an estimate, not a measurement (`jx()` is one synchronous block): the first fill eases toward 95% over 8 s and the second sweeps to 100% when `done` is added. It animates only `transform` on HTML elements so the compositor keeps it moving while `jx()` blocks the main thread (about 1.5 s to build plus 1.3 s for the first frame's shader compiles under headless swiftshader).
+- Loading screen (`#loading`, before the scripts): pale sky gradient matched to the opening frame, the logo (`img.ld-name`: a 1096 x 688 WebP with a transparent background, embedded as a `data:` URI, about 113 KB of base64 on one line: never print that line), the line "Shaping a tiny island…" and a progress bar (`.ld-bar`, two `<i>` fills). The bar is an estimate, not a measurement (`jx()` is one synchronous block): the first fill eases toward 95% over 8 s and the second sweeps to 100% when `done` is added. It animates only `transform` on HTML elements so the compositor keeps it moving while `jx()` blocks the main thread (about 1.5 s to build plus 1.3 s for the first frame's shader compiles under headless swiftshader). The build starts once the logo has decoded (`otiLg.decode()`, 250 ms at most, at the end of the bundle), so the logo is painted before the page blocks.
 - `scripts/screenshots.mjs`: Playwright generator for `docs/screenshots/*.jpg` (read its header).
-- `docs/screenshots/`: README images; `hero.jpg` is also the social preview image.
+- `docs/screenshots/`: README images; `hero.jpg` is also the page's social preview image (`og:image`).
+- `docs/logo.png`: the logo with a transparent background (README header; the master the loading screen's WebP is made from). `docs/social-preview.jpg`: the logo on white, 1280 x 640, for the GitHub repository's social preview (uploaded by hand in the repository settings).
 - `UI-GUIDELINES.md`: the UI system (tokens, type, components, accessibility, icons, voice). `THIRD-PARTY-NOTICES.md`: three.js (MIT), Material Symbols (Apache 2.0) and Octicons (MIT, the GitHub mark) licence texts.
 - `_headers`: Cloudflare Pages caching and security headers. `README.md`, `LICENSE` (MIT), `.gitignore`.
 
 ## Golden rules
 
-1. One self-contained file: no extra JS/CSS files, no CDN, no fonts, no images loaded by the page.
+1. One self-contained file: no extra JS/CSS files, no CDN, no fonts, no images loaded by the page (the loading screen's logo and the favicon are `data:` URIs inside it).
 2. Zero network requests at runtime (the one link out, "Source on GitHub" at the bottom of the panel, only opens a new tab when pressed). No build step: the repo root is the site.
 3. Kid friendly: nobody gets hurt, nothing burns or sinks. Cannonballs always miss.
 4. Keep `window.__island` (and `__island.ships`, `__island.farm`, `__island.parrots`) stable: the screenshot script, the README and people's consoles use it.
