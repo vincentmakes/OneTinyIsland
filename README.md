@@ -48,7 +48,7 @@ If your browser is fussy about `file://` pages, any static server will do, for e
 
 ## Under the hood
 
-- **One file.** `index.html` holds the styles, the markup and all the code. three.js (r187) and the island itself are bundled and minified into one big `<script>`.
+- **One file.** `index.html` holds the styles, the markup and all the code. three.js (r187) and the island itself are bundled and minified into one big `<script>`. The icons are Material Symbols Rounded, inlined as SVG paths, and the text uses your system font, so nothing is downloaded.
 - **A small plugin hook.** The bundle hands every function in `window.__islandPlugins` a `kit` of three.js classes and island helpers under readable names, adds the plugin's group to the scene and calls its `update` every frame. The ships are written this way, in a readable `<script id="ships">`, and every boat's hull comes from the readable builder in `<script id="boat-hull">`.
 - **A console API.** Open the browser console and play:
 
@@ -63,6 +63,14 @@ If your browser is fussy about `file://` pages, any static server will do, for e
   ```
 
   `__island.weathers` lists all the weather names.
+
+  Curious how fast it runs on your device? Paste this into the console; it averages the frame time over 300 frames:
+
+  ```js
+  {let n=0,t0=performance.now();const f=()=>++n<300?requestAnimationFrame(f):console.log(((performance.now()-t0)/n).toFixed(1)+' ms/frame');requestAnimationFrame(f)}
+  ```
+
+  About 16.7 ms/frame means a smooth 60 frames a second. `__island.info().pixelRatio` shows whether the page has lowered its resolution by itself to keep up: it starts at your screen's pixel ratio (at most 2 on High, 1.25 on Low) and drops in steps of 0.25 when the page is struggling.
 
 ## Regenerate the screenshots
 
@@ -79,5 +87,8 @@ It freezes the weather, the clock and the camera for each shot, steps the simula
 
 ## Credits and licence
 
-- [three.js](https://threejs.org/) is bundled inside `index.html`. It is MIT licensed, © three.js authors.
+- [three.js](https://threejs.org/) r187 is bundled inside `index.html`. It is MIT licensed, © three.js authors.
+- The icons are [Material Symbols Rounded](https://fonts.google.com/icons) by Google, inlined as SVG paths. They are licensed under the Apache License 2.0, © Google LLC.
+- Licence texts and versions for both: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+- How the controls look and behave, and the rules for changing them: [UI-GUIDELINES.md](UI-GUIDELINES.md).
 - Everything else is © 2026 Vincent Verdet, released under the MIT licence: see [LICENSE](LICENSE).

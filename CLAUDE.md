@@ -12,6 +12,7 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, l
   - `<script id="hints">`: one-time "Drag to look around" toast (`localStorage['oti-hint-drag']`).
 - `scripts/screenshots.mjs`: Playwright generator for `docs/screenshots/*.jpg` (read its header).
 - `docs/screenshots/`: README images; `hero.jpg` is also the social preview image.
+- `UI-GUIDELINES.md`: the UI system (tokens, type, components, accessibility, icons, voice). `THIRD-PARTY-NOTICES.md`: three.js (MIT) and Material Symbols (Apache 2.0) licence texts.
 - `_headers`: Cloudflare Pages caching and security headers. `README.md`, `LICENSE` (MIT), `.gitignore`.
 
 ## Golden rules
@@ -21,6 +22,7 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, l
 3. Kid friendly: nobody gets hurt, nothing burns or sinks. Cannonballs always miss.
 4. Keep `window.__island` (and `__island.ships`) stable: the screenshot script, the README and people's consoles use it.
 5. The page must load with a clean console (no errors, no warnings) and keep working without WebGL extras, sound or storage.
+6. UI changes follow UI-GUIDELINES.md (and update it in the same commit).
 
 ## Editing the minified bundle
 
@@ -44,14 +46,14 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, l
   | `mf` | wildlife (gulls, dolphins, fish, turtles) |
   | `Mf` | Christmas extras (sleigh and friends; the snowman lives in `uf`) |
   | `ci` / `io` / `hl` | weather presets / weather name list / weather state machine class |
-  | `wn` | SVG icons |
+  | `wn` | SVG icons: Material Symbols Rounded paths wrapped by `Be` (see UI-GUIDELINES.md, Icons) |
   | `wf` | UI (panel, toasts, keys) |
   | `ul` | audio class |
   | `jx` | main: renderer, scene, lighting `Te(dt)`, simulation step `Et(dt)`, loop `bt`, `window.__island` |
   | `Ri` | material patcher (snow/wet/wind shader hooks) |
 
   Helpers: `at` tint geometry, `Ue` merge geometries, `Ze` seeded rng, `ce` clamp, `xe` lerp, `Nt` smoothstep, `De` world radius (86).
-- Patched-in code uses `oti`-prefixed names (`otiP` plugin list, `otiU` plugin update, `otiF` per-frame shadow throttle + adaptive pixel ratio, `otiSlow`/`otiFT`/`otiAd`/`otiWarm` adaptive resolution state, `otiFS` fish schools, `otiAD`/`otiAR` aurora dice...). Use the same prefix for anything new so patches stay greppable.
+- Patched-in code uses `oti`-prefixed names (`otiP` plugin list, `otiU` plugin update, `otiF` per-frame shadow throttle + adaptive pixel ratio, `otiSlow`/`otiFT`/`otiAd`/`otiWarm` adaptive resolution state, `otiFS` fish schools, `otiAD`/`otiAR` aurora dice...). Realism pass: terrain `otiQ`/`otiL` (adaptive lattice), `otiV`/`otiG` (per-vertex normal + occlusion cache), land-first index order with the seabed left out of the shadow pass; `otiVG` vegetation vertex gradient; `otiGlow`/`otiPlaza` night plaza light pool uniforms; `otiDry` skips water cells under land. Some short names (`otiF`, `otiV`) are reused as locals in other scopes: grep with context. Use the same prefix for anything new so patches stay greppable.
 
 ## Plugin hook and `kit`
 
@@ -88,7 +90,8 @@ Also `worldRadius` (`De`), `scene`, `camera`, `controls`, `state`, `toast(msg)` 
 - Chromium flags: `--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist`. Playwright may be installed globally (`npm root -g`); do not add it to the repo.
 - Pause the page's own loop with an init script that wraps `requestAnimationFrame` and checks a `window.__pauseLoop` flag (see `scripts/screenshots.mjs`), then drive time with `__island.step(dt, n)` (runs n simulation steps, renders once).
 - Useful API: `setWeather(name, instant)`, `setTime(h)`, `setSpeed`, `setAuto`, `setDayCycle`, `setAutoRotate`, `erupt()`, `setSnowCover`, `setCamera(az, el, distScale, tx, ty, tz)`, `reset()`, `info()`, `ui.setOpen/setHidden/showToast`, `setAdaptiveResolution(false)`, `ships.summon()`, `ships.state()`.
-- Baseline from `info()` at load (1280x720): **54 draw calls, about 515k triangles**. Ships add at most 8 calls.
+- Baseline from `info()` at load (1280x720): **54 draw calls, about 440k triangles on High (about 338k on Low)**. Ships add at most 8 calls.
+- Budget rule: a change must not raise draw calls, triangles, programs, textures or vertex-buffer bytes at load, on High or Low.
 - Collect `console` errors/warnings and `pageerror`; a clean run has none.
 - Swiftshader is slow: step in chunks, and give `page.screenshot` a long timeout (new effects compile shaders on first sight).
 - Screenshots: `node scripts/screenshots.mjs [--only a,b] [--out DIR]` (about 3 minutes). Look at every image you regenerate; keep the nine under about 3 MB total.
