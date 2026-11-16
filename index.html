@@ -348,6 +348,20 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
     g.deleteAttribute('normal');
     return tint(g, color);
   }
+  // Where that strip's surface really is: x at (y, z), in the rig's local frame (before
+  // braceY). It interpolates the strip's own vertices (4 segments across, 1 up), not the
+  // smooth formula, so it follows the triangles: exact on an unstriped sail, whose two rows
+  // share one curve (v = -1 and +1), and bilinear within a quad otherwise.
+  function sailSurfaceX(width, bottom, top, y0, y1, belly, y, z) {
+    const at = (yy, zz) => {
+      const u = (2 * zz) / width, v = ((yy - bottom) / (top - bottom)) * 2 - 1;
+      return belly * (1 - u * u) * (1 - 0.45 * v * v);
+    };
+    const s = width / 4, i = clamp(Math.floor((z + width / 2) / s), 0, 3), za = -width / 2 + i * s;
+    const fz = clamp((z - za) / s, 0, 1), fy = clamp((y - y0) / (y1 - y0), 0, 1);
+    const row = (yy) => at(yy, za) + (at(yy, za + s) - at(yy, za)) * fz;
+    return row(y0) + (row(y1) - row(y0)) * fy;
+  }
   // A mast with stacked square sails and their yards, braced round so the sails
   // read from the side as well as from ahead.
   function rig(x, foot, height, sails, braceY, extra = []) {
@@ -396,13 +410,32 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
   }
 
   // ---------- the pirate ship: ~7 long, black sails, skull and crossbones ------
-  function skull(x, y, facing) {
-    // a cartoon skull on a disc-ish head, with two crossed bones behind it
-    const f = facing, P = [];
-    P.push(part(new IcosahedronGeometry(0.5, 1).scale(0.35, 1, 1.05), 0xf4f1e8, x, y + 0.12, 0));
-    P.push(box(0.18, 0.28, 0.5, 0xf4f1e8, x, y - 0.32, 0));
-    for (const z of [-0.18, 0.18]) P.push(part(new IcosahedronGeometry(0.12, 0).scale(0.6, 1, 1), 0x1d1d22, x + f * 0.16, y + 0.16, z));
-    for (const a of [-0.75, 0.75]) P.push(part(new BoxGeometry(0.1, 1.7, 0.16).rotateX(a), 0xf4f1e8, x - f * 0.08, y - 0.05, 0));
+  function skull(y, facing, surf) {
+    // A flat cartoon skull badge on one face of a sail, in the rig's local frame: crossed
+    // bones just behind the head, eye sockets just proud of it. `surf(y, z)` is the sail's
+    // surface x; facing +1 seats the badge in front of the sail (+x), -1 behind it. The
+    // badge is flat and the sail bends back toward its edges, so the badge's back plane sits
+    // a hair beyond the sail's furthest point over the badge's whole footprint.
+    const f = facing, P = [], HAIR = 0.015;
+    const at = (d) => f * d;                       // d = depth out from the badge's back plane
+    for (const a of [-0.75, 0.75]) P.push(part(new BoxGeometry(0.05, 1.7, 0.16).rotateX(a), 0xf4f1e8, at(0.025), y - 0.05, 0));
+    P.push(part(new IcosahedronGeometry(0.5, 1).scale(0.12, 1, 1.05), 0xf4f1e8, at(0.1), y + 0.12, 0));
+    P.push(box(0.1, 0.28, 0.5, 0xf4f1e8, at(0.1), y - 0.32, 0));
+    for (const z of [-0.18, 0.18]) P.push(part(new IcosahedronGeometry(0.12, 0).scale(0.25, 1, 1), 0x1d1d22, at(0.165), y + 0.16, z));
+    let y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const g of P) {
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i));
+        z0 = Math.min(z0, p.getZ(i)); z1 = Math.max(z1, p.getZ(i));
+      }
+    }
+    let lim = -f * Infinity;                       // furthest sail point toward the badge's side
+    for (let i = 0; i <= 8; i++) for (let j = 0; j <= 32; j++) {
+      const s = surf(y0 + ((y1 - y0) * i) / 8, z0 + ((z1 - z0) * j) / 32);
+      lim = f > 0 ? Math.max(lim, s) : Math.min(lim, s);
+    }
+    for (const g of P) g.translate(lim + f * HAIR, 0, 0);
     return P;
   }
   function buildPirate() {
@@ -418,10 +451,14 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
     P.push(box(0.12, 0.12, 0.12, 0xc89a3a, -3.45, sternDeck + 0.55, 0));
     const black = 0x2e2e36;
     P.push(...rig(1.5, U.deckAt(1.5), 6, [{ y0: 1.2, y1: 3.4, w: 2.8, color: black }, { y0: 3.7, y1: 5.3, w: 2.1, color: black }], 0.6));
-    // main lower sail carries the skull on both faces (belly 0.5 => sail centre at x 0.5)
-    const mainFoot = U.deckAt(-0.9);
-    const sk = [...skull(0.62, mainFoot + 2.65, 1), ...skull(0.22, mainFoot + 2.65, -1)];
-    P.push(...rig(-0.9, mainFoot, 6.9, [{ y0: 1.2, y1: 4.1, w: 3.3, color: black, belly: 0.5 }, { y0: 4.4, y1: 6.1, w: 2.4, color: black }], 0.6, sk));
+    // The main lower sail carries one skull badge on each face. The sail is one strip with
+    // one segment top to bottom, so it is flat vertically: its surface is at x 0.275 on the
+    // centre line (belly 0.5 x (1 - 0.45)) and falls back toward the edges.
+    const mainFoot = U.deckAt(-0.9), ms = { y0: 1.2, y1: 4.1, w: 3.3, color: black, belly: 0.5 };
+    const mb = mainFoot + ms.y0, mt = mainFoot + ms.y1;
+    const surf = (y, z) => sailSurfaceX(ms.w, mb, mt, mb, mt, ms.belly, y, z);
+    const sk = [...skull(mainFoot + 2.65, 1, surf), ...skull(mainFoot + 2.65, -1, surf)];
+    P.push(...rig(-0.9, mainFoot, 6.9, [ms, { y0: 4.4, y1: 6.1, w: 2.4, color: black }], 0.6, sk));
     // Jolly Roger at the top of the main mast
     const fy = mainFoot + 6.5;
     P.push(box(1.2, 0.75, 0.04, 0x1d1d22, -1.55, fy, 0));
