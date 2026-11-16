@@ -14,7 +14,7 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **A little village** with huts, a jetty, a lighthouse on its own rocky islet and a waterfall.
 - **A tiny farm**: a Thai-style windmill whose woven sails turn lazily on calm days and briskly in a storm, and four little wheat beds that grow from bare soil to golden ears, get harvested row by row and start again. Rain makes them grow faster; snow puts them on hold.
 - **A villager with a canoe**: by day they carry it up through the village and past the farm, paddle it down the river under the footbridge and once round the lagoon, then carry it up again. At dusk, or when the weather turns, they tie it up at the jetty and go home.
-- **Wildlife**: seagulls, leaping dolphins, schools of tropical fish in the lagoon and sea turtles.
+- **Wildlife**: seagulls, leaping dolphins, schools of tropical fish in the lagoon, sea turtles, and three pairs of red-and-blue macaws that sit on the treetops and flit from tree to tree over the forest on fine days.
 - **Snow that settles**: a real snowfall whitens the whole island and freezes the sea, and a snowy night hides a small Christmas surprise.
 - **Boats** bobbing and rolling on the same waves the water shader draws.
 - **A galleon and some friendly pirates**: every now and then a galleon sails by, and the pirates usually come out to meet it. They fire a few cannon puffs that always miss, the galleon fires back (also missing), and off it sails. Nobody gets hurt, nothing sinks. The ships stay in port in storms, gales and on a frozen sea.
