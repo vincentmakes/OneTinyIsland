@@ -7074,7 +7074,7 @@ void main(){
   col = mix(col, iceCol * (1.0 - crack*0.25), ice);
   }
   col += uFlash * vec3(0.25,0.28,0.35);
-  float alpha = mix(0.42, 0.94, smoothstep(0.25, 5.5, od));
+  float alpha = mix(mix(0.26, 0.94, 1.0 - exp(-1.25 * od)), mix(0.42, 0.94, smoothstep(0.25, 5.5, od)), lag);
   alpha = max(alpha, foam*0.95);
   alpha = max(alpha, ice);
   gl_FragColor = vec4(col, alpha);
