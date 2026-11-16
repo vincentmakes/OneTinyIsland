@@ -27,8 +27,13 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Shot table. Camera: [azimuth, elevation, distScale, targetX, targetY, targetZ]
 // (radians; azimuth 0 puts the camera on +z looking toward -z; distScale 1 = default
 // framing). `settle` = simulated seconds stepped after the state is set. Volcano sits at
-// about (-36, -6), the lagoon at (32, 13), the village plaza at (4, 18), the paddies around
-// (-15, 15) and the lighthouse at about (47, 21).
+// about (-36, -6), the lagoon at (32, 13), the village plaza at (4, 18), the windmill and the
+// wheat beds around (-15, 15) and the lighthouse at about (47, 21).
+// The farm (window.__island.farm) is set to the same state for every shot: four different
+// growth stages (`growth`, one phase per bed) and the villager at `villager` = [phase,
+// progress] once the shot has settled (the default puts the canoe in the lagoon). The
+// farm skips itself when the page has no farm API. By night or in bad weather the villager
+// stays home, with the canoe at its mooring.
 // ---------------------------------------------------------------------------------------
 const DESKTOP = { width: 1280, height: 720 };
 const PHONE = { width: 390, height: 844 };
@@ -163,7 +168,18 @@ function setUp({ shot, dt }) {
   isl.ui.setOpen(!!shot.panel);
   isl.ui.setHidden(!(shot.panel || shot.ui));
   if (shot.camera) isl.setCamera(...shot.camera);
+  const FARM = { growth: [0.13, 0.4, 0.62, 0.8], villager: ['lagoon', 0.42] }; // defaults (see the header)
+  const farm = isl.farm && typeof isl.farm.setGrowth === 'function' ? isl.farm : null;
+  // the villager is out on calm days only: otherwise home, with the canoe at its mooring
+  const outside = shot.hours > 7 && shot.hours < 17 && !shot.snowCover && !['rain', 'storm', 'gale', 'snow'].includes(shot.weather);
+  const villager = farm && typeof farm.setVillager === 'function';
+  if (farm) farm.setGrowth(shot.growth || FARM.growth);
+  if (villager) farm.setVillager('home');
   step(shot.settle);
+  if (villager && outside) {
+    farm.setVillager(...(shot.villager || FARM.villager));
+    step(0.5);
+  }
 
   if (shot.erupt) {
     isl.erupt();
