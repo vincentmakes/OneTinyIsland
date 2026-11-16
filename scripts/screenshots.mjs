@@ -27,7 +27,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Shot table. Camera: [azimuth, elevation, distScale, targetX, targetY, targetZ]
 // (radians; azimuth 0 puts the camera on +z looking toward -z; distScale 1 = default
 // framing). `settle` = simulated seconds stepped after the state is set. Volcano sits at
-// about (-36, -6), the lagoon at (32, 13), the village around (-15, 16).
+// about (-36, -6), the lagoon at (32, 13), the village plaza at (4, 18), the paddies around
+// (-15, 15) and the lighthouse at about (47, 21).
 // ---------------------------------------------------------------------------------------
 const DESKTOP = { width: 1280, height: 720 };
 const PHONE = { width: 390, height: 844 };

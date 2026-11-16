@@ -37,11 +37,12 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, l
   | Name | What |
   |---|---|
   | `ye` | colour palette |
-  | `Qu` | terrain mesh; `te(x,z)` terrain height |
+  | `Qu` | terrain mesh; `te(x,z)` terrain height (baked by `Fx` from `Yu` plus rivers, lagoon, lighthouse islet and islets) |
+  | `Oe` / `sl` / `sr` | paddies layout (`x, z` centre, `a, b` ellipse half axes, `rot`, `h` lowest level, `n` levels, `s` step, `r` riser width, `R` arc centre uphill), world to field-local coordinates, footprint test |
   | `nf` | water and rim wall; `rr(x,z,t,sea)` wave height, the JS twin of GLSL `waveH` (string `Ku`): seven Stokes-shaped trains via `otiWv` (two near main swells that beat into sets, a cross swell, two wind seas, two chop trains growing with sea²). Keep the two identical: boats, ships and dolphins ride on `rr` |
   | `sf` / `of` | sky dome / clouds |
   | `cf` | vegetation |
-  | `uf` | village and boats (`ol` = hull helper, delegates to `__islandBoatHull`) |
+  | `uf` | village and boats (`ol` = hull helper, delegates to `__islandBoatHull`); also the paddies' walls, tufts, ducks, stepping stones, field hut (exported as `xmas.paddyHut` for the eave lights in `Mf`) and scarecrow |
   | `df` | volcano |
   | `mf` | wildlife (gulls, dolphins, fish, turtles) |
   | `Mf` | Christmas extras (sleigh and friends; the snowman lives in `uf`) |
@@ -53,7 +54,7 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, l
   | `Ri` | material patcher (snow/wet/wind shader hooks) |
 
   Helpers: `at` tint geometry, `Ue` merge geometries, `Ze` seeded rng, `ce` clamp, `xe` lerp, `Nt` smoothstep, `De` world radius (86).
-- Patched-in code uses `oti`-prefixed names (`otiP` plugin list, `otiU` plugin update, `otiF` per-frame shadow throttle + adaptive pixel ratio, `otiSlow`/`otiFT`/`otiAd`/`otiWarm` adaptive resolution state, `otiFS` fish schools, `otiAD`/`otiAR` aurora dice...). Realism pass: terrain `otiQ`/`otiL` (adaptive lattice), `otiV`/`otiG` (per-vertex normal + occlusion cache), land-first index order with the seabed left out of the shadow pass; `otiVG` vegetation vertex gradient; `otiGlow`/`otiPlaza` night plaza light pool uniforms; `otiDry` skips water cells under land. Some short names (`otiF`, `otiV`) are reused as locals in other scopes: grep with context. Use the same prefix for anything new so patches stay greppable.
+- Patched-in code uses `oti`-prefixed names (`otiP` plugin list, `otiU` plugin update, `otiF` per-frame shadow throttle + adaptive pixel ratio, `otiSlow`/`otiFT`/`otiAd`/`otiWarm` adaptive resolution state, `otiFS` fish schools, `otiAD`/`otiAR` aurora dice...). Realism pass: terrain `otiQ`/`otiL` (adaptive lattice), `otiV`/`otiG` (per-vertex normal + occlusion cache), land-first index order with the seabed left out of the shadow pass; `otiVG` vegetation vertex gradient; `otiGlow`/`otiPlaza` night plaza light pool uniforms; `otiDry` skips water cells under land. Paddies (three nested crescent pools in an ellipse): `otiTR` ring radius round the arc centre, `otiTQ` ellipse metric, `otiTK(k)` radius of riser wall k, `otiTH` stepped height used in `Yu`, `otiTD` signed footprint distance (blend apron, `sr`), `otiTW` field-local to world, `otiTP`/`otiTF` points on an arc / on the rim ellipse, `otiTT`/`otiTA` where an arc meets the rim, `otiTB(k,t)` uphill and downhill edge of pool k; `otiWa` builds a plump wall along a polyline in `uf` (`otiR` its rng); the still water is one sheet per pool appended to the river mesh in `_f` with `aFade = 2`, shaded in the river shader's `vFade > 1.5` branch (rivers keep `aFade` 0..1 and their old code path). Lighthouse islet in `Fx`: `otiLD`/`otiLT` (flat top, kept out of the lagoon gap). Some short names (`otiF`, `otiV`) are reused as locals in other scopes: grep with context. Use the same prefix for anything new so patches stay greppable.
 
 - Camera (`l` = OrbitControls in `jx`): pan over the ground (right-drag, two fingers, arrows on the focused canvas), tilt 0.02–1.5 rad, distance `max(6, q*.03)`–`q*1.7`, pivot within 70 of the default `(-1, 2.5, 3)` (`l.cursor`, `l.maxTargetRadius`). `otiCam` (set by user input, cleared by `setCamera`/`reset`) makes the pivot ride the ground (`max(te,0)+otiCamK`) and eases the camera up to terrain + 9.5 over land (`otiCamH`/`otiCamU`); the hard floor at terrain + 3.5 applies to every camera. `otiHome` is the reset view (double-click/double-tap via `otiTap*`, Home key). Scripted cameras are unaffected.
 
@@ -93,7 +94,7 @@ Also `worldRadius` (`De`), `scene`, `camera`, `controls`, `state`, `toast(msg)` 
 - Chromium flags: `--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist`. Playwright may be installed globally (`npm root -g`); do not add it to the repo.
 - Pause the page's own loop with an init script that wraps `requestAnimationFrame` and checks a `window.__pauseLoop` flag (see `scripts/screenshots.mjs`), then drive time with `__island.step(dt, n)` (runs n simulation steps, renders once).
 - Useful API: `setWeather(name, instant)`, `setTime(h)`, `setSpeed`, `setAuto`, `setDayCycle`, `setAutoRotate`, `erupt()`, `setSnowCover`, `setCamera(az, el, distScale, tx, ty, tz)` (elevation 0.07 to 1.55 rad, was 0.21 to 1.39; distance clamped to `max(6, 3%)`–170% of the default, was `max(20, 8.5%)`–145%), `reset()`, `info()`, `ui.setOpen/setHidden/showToast`, `setAdaptiveResolution(false)`, `ships.summon()`, `ships.state()`.
-- Baseline from `info()` at load (1280x720): **54 draw calls, about 440k triangles on High (about 338k on Low)**. Ships add at most 8 calls.
+- Baseline from `info()` at load (1280x720): **54 draw calls, about 438k triangles on High (about 336k on Low)**. Ships add at most 8 calls.
 - Budget rule: a change must not raise draw calls, triangles, programs, textures or vertex-buffer bytes at load, on High or Low.
 - Collect `console` errors/warnings and `pageerror`; a clean run has none.
 - Swiftshader is slow: step in chunks, and give `page.screenshot` a long timeout (new effects compile shaders on first sight).

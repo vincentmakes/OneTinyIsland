@@ -11,7 +11,7 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **Eight weathers**: clear, partly cloudy, overcast, fog, rain, thunderstorm (with lightning), gale and snow. Left alone, the island picks its own weather every so often.
 - **Day and night**: the sun, moon and stars move on their own, sunsets glow, the village lights come on after dark, and some nights bring an aurora.
 - **A sleepy volcano** that smokes all day and erupts now and then, or whenever you press Erupt.
-- **A little village** with huts, a farm patch, a jetty, a lighthouse and a waterfall.
+- **A little village** with huts, three little terraced paddies whose still water mirrors the sky (ducks included), a jetty, a lighthouse on its own rocky islet and a waterfall.
 - **Wildlife**: seagulls, leaping dolphins, schools of tropical fish in the lagoon and sea turtles.
 - **Snow that settles**: a real snowfall whitens the whole island and freezes the sea, and a snowy night hides a small Christmas surprise.
 - **Boats** bobbing and rolling on the same waves the water shader draws.
