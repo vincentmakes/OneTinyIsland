@@ -2,11 +2,13 @@
 
 A tiny procedural 3D island diorama that lives in a single HTML file. Open it, drag it around, and watch the weather roll in.
 
+**[Visit the island at onetinyisland.verdet.me](https://onetinyisland.verdet.me)** — it runs right in your browser, nothing to install.
+
 ![One Tiny Island on a sunny morning](docs/screenshots/hero.jpg)
 
 ## What's in it
 
-- **Eleven weathers**: clear, partly cloudy, overcast, fog, drizzle, rain, thunderstorm (with lightning), gale, hail, snow and blizzard. Left alone, the island picks its own weather every so often.
+- **Eight weathers**: clear, partly cloudy, overcast, fog, rain, thunderstorm (with lightning), gale and snow. Left alone, the island picks its own weather every so often.
 - **Day and night**: the sun, moon and stars move on their own, sunsets glow, the village lights come on after dark, and some nights bring an aurora.
 - **A sleepy volcano** that smokes all day and erupts now and then, or whenever you press Erupt.
 - **A little village** with huts, a farm patch, a jetty, a lighthouse and a waterfall.
@@ -32,7 +34,10 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 
 ## Controls
 
-- **Drag** to orbit the island, **scroll** or **pinch** to zoom.
+- **Drag** to orbit the island, **scroll** or **pinch** to zoom. Zoom right in, or look straight down from above.
+- **Right-drag** (or **two fingers** on a phone) to slide the view around the island. The view follows the ground, so you can fly over the volcano or peek into the village.
+- **Double-click** (or **double-tap**) to jump back to the starting view.
+- With the island focused (click it, or Tab to it): **arrow keys** move, **Shift + arrows** turn, **+** and **-** zoom, **Home** resets.
 - The **menu button** (bottom right) opens the control panel: weather, auto weather, speed, time of day and the day/night cycle, plus Auto-rotate, Sound, Quality, Erupt, Ahoy! and Hide UI.
 - **Erupt** (also the volcano button next to the menu) sets the volcano off.
 - **Ahoy!** brings the galleon and the pirate ship sailing into view for a meeting (unless the weather keeps them in port).
@@ -44,34 +49,16 @@ Just open `index.html` in a recent browser. There is no build step, no dependenc
 
 If your browser is fussy about `file://` pages, any static server will do, for example `npx serve .`.
 
-## Publish on Cloudflare Pages
-
-The repo is meant to be deployed with Cloudflare Pages' Git integration:
-
-1. In the Cloudflare dashboard, create a **Pages** project, choose to connect it to Git, and pick this repository.
-2. Build settings:
-   - **Framework preset**: None
-   - **Build command**: leave it empty (or `exit 0` if the field insists on something)
-   - **Build output directory**: `/`
-   - **Production branch**: `main`
-3. Save and deploy.
-
-From then on every push to `main` deploys the site, and other branches get their own preview URLs.
-
-The `_headers` file sets caching (always revalidate the page, cache the screenshots for a day) and a few security headers. Note that the whole repo root is published, so anything you commit is reachable on the site.
-
-After the first deploy, change the `og:image` and `twitter:image` URLs in `index.html` to absolute ones (for example `https://your-site.pages.dev/docs/screenshots/hero.jpg`) so link previews show the island.
-
 ## Under the hood
 
-- **One file.** `index.html` holds the styles, the markup and all the code. three.js (r187) and the island itself are bundled and minified into one big `<script>`.
+- **One file.** `index.html` holds the styles, the markup and all the code. three.js (r187) and the island itself are bundled and minified into one big `<script>`. The icons are Material Symbols Rounded, inlined as SVG paths, and the text uses your system font, so nothing is downloaded.
 - **A small plugin hook.** The bundle hands every function in `window.__islandPlugins` a `kit` of three.js classes and island helpers under readable names, adds the plugin's group to the scene and calls its `update` every frame. The ships are written this way, in a readable `<script id="ships">`, and every boat's hull comes from the readable builder in `<script id="boat-hull">`.
 - **A console API.** Open the browser console and play:
 
   ```js
   __island.ships.summon()        // pirates ahoy!
   __island.erupt()               // wake the volcano
-  __island.setWeather('snow')    // or 'storm', 'fog', 'blizzard'...
+  __island.setWeather('snow')    // or 'storm', 'fog', 'gale'...
   __island.setTime(21.5)         // jump to the evening
   __island.setSpeed(30)          // fast-forward time
   __island.setAuto(false)        // stop the weather changing on its own
@@ -79,6 +66,14 @@ After the first deploy, change the `og:image` and `twitter:image` URLs in `index
   ```
 
   `__island.weathers` lists all the weather names.
+
+  Curious how fast it runs on your device? Paste this into the console; it averages the frame time over 300 frames:
+
+  ```js
+  {let n=0,t0=performance.now();const f=()=>++n<300?requestAnimationFrame(f):console.log(((performance.now()-t0)/n).toFixed(1)+' ms/frame');requestAnimationFrame(f)}
+  ```
+
+  About 16.7 ms/frame means a smooth 60 frames a second. `__island.info().pixelRatio` shows whether the page has lowered its resolution by itself to keep up: it starts at your screen's pixel ratio (at most 2 on High, 1.25 on Low) and drops in steps of 0.25 when the page is struggling.
 
 ## Regenerate the screenshots
 
@@ -95,5 +90,8 @@ It freezes the weather, the clock and the camera for each shot, steps the simula
 
 ## Credits and licence
 
-- [three.js](https://threejs.org/) is bundled inside `index.html`. It is MIT licensed, © three.js authors.
+- [three.js](https://threejs.org/) r187 is bundled inside `index.html`. It is MIT licensed, © three.js authors.
+- The icons are [Material Symbols Rounded](https://fonts.google.com/icons) by Google, inlined as SVG paths. They are licensed under the Apache License 2.0, © Google LLC.
+- Licence texts and versions for both: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+- How the controls look and behave, and the rules for changing them: [UI-GUIDELINES.md](UI-GUIDELINES.md).
 - Everything else is © 2026 Vincent Verdet, released under the MIT licence: see [LICENSE](LICENSE).
