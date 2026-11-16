@@ -209,8 +209,10 @@ Only `transform` and `opacity` are animated, on HTML elements, so the compositor
 while the scene build blocks the main thread; never animate anything else here, and never animate
 elements inside the SVGs. Any frame of it must look finished enough, because a fast machine shows
 it for a fraction of a second: no minimum display time. It fades out over 0.6 s once the first
-scene frame has been drawn, then is removed. Failure: dark radial gradient, bold title + one
-friendly line in `--muted`; the loader is removed at once underneath it.
+scene frame has been drawn, then is removed (with reduced motion it disappears at once).
+Without JavaScript a `<noscript>` style hides the loader, so only the noscript message shows and
+nothing animates. Failure: dark radial gradient, bold title + one friendly line in `--muted`; the
+loader is removed at once underneath it.
 
 ## Breakpoints
 
@@ -235,8 +237,8 @@ Check every UI change at 1280 x 720, 390 x 844 and 320 x 568.
 | Loading idle: bob / smoke / cloud | 4 s / 3.3 s (three puffs 1.1 s apart) / 16 s loops | ease-in-out / ease-out / linear |
 
 `prefers-reduced-motion: reduce` turns all of these off: no transitions on the panel, toast,
-hidden UI, switch, restore button or UI layer, and the loading diorama is shown finished and
-still (one puff of smoke, no bob). Auto-rotate also starts off.
+hidden UI, switch, restore button or UI layer, no loading fade (the loader disappears at once),
+and the loading diorama is shown finished and still (one puff of smoke, no bob). Auto-rotate also starts off.
 Any new animation needs its reduced-motion rule in the same change.
 
 ## Accessibility
