@@ -17,7 +17,8 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **Boats** bobbing and rolling on the same waves the water shader draws.
 - **A galleon and some friendly pirates**: every now and then a galleon sails by, and the pirates usually come out to meet it. They fire a few cannon puffs that always miss, the galleon fires back (also missing), and off it sails. Nobody gets hurt, nothing sinks. The ships stay in port in storms, gales and on a frozen sea.
 - **Sound** (off by default): waves, wind, rain, gulls, thunder and the odd cannon "poomf".
-- **Quality toggle**: High or Low, for older phones and laptops. The page also lowers its resolution by itself if it is struggling.
+- **Surfaces with texture**: rippled sand, mottled grass, layered rock, leafy canopies and thatched roofs, all drawn by the shaders (no image files). Zoom in to see it.
+- **Quality toggle**: High or Low, for older phones and laptops. Low also skips the surface detail. The page also lowers its resolution by itself if it is struggling.
 
 ## Gallery
 
