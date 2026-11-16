@@ -1,7 +1,7 @@
 # Third-party notices
 
 One Tiny Island is one self-contained page, `index.html`. Besides the island code (MIT, see
-[LICENSE](LICENSE)) it contains the two third-party works below. Nothing is loaded from the
+[LICENSE](LICENSE)) it contains the three third-party works below. Nothing is loaded from the
 network at runtime.
 
 ## three.js r187
@@ -255,4 +255,41 @@ THE SOFTWARE.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+```
+
+## GitHub mark (Octicons, GitHub)
+
+- What: the SVG path data of the GitHub mark, `wn.github` inside `index.html`, shown on the
+  "Source on GitHub" link at the bottom of the control panel. The path data is inlined
+  unmodified; only the `<svg>` wrapper (size, `fill="currentColor"`, `aria-hidden`) is ours.
+- Source: https://github.com/primer/octicons at release `v19.15.0`, file
+  `icons/mark-github-24.svg`.
+- The GitHub mark is a trademark of GitHub, Inc. It is used here only to show that the link
+  leads to the project's repository on GitHub; One Tiny Island is not affiliated with or
+  endorsed by GitHub.
+- Licence of the icon set: MIT. Text below, copied from
+  https://github.com/primer/octicons/blob/v19.15.0/LICENSE
+
+```text
+MIT License
+
+Copyright (c) 2025 GitHub Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```

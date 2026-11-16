@@ -69,7 +69,7 @@ sans-serif`, antialiased. No web fonts.
 | 20 px | 700 (`b`) | Failure screen title |
 | 17 px | 700 | Panel title |
 | 15 px | 600 / 400 | Chip weather name (600), switch row labels (400), time value (600, tabular), loading and failure text |
-| 14 px | 600 | Speed segments (tabular), action buttons |
+| 14 px | 600 | Speed segments (tabular), action buttons, source link |
 | 13 px | 600 | Toast; section headings (uppercase, 1.2 px tracking, `--muted`) |
 | 12 px | 400 | Chip second line, row hints, weather labels, footnote |
 | 10 px | 600 | "next" badge only |
@@ -101,6 +101,7 @@ Minimum 44 x 44 px for anything you can press.
 | Weather button | min-height 64 px, a quarter of the panel width (66 px wide on a 320 px phone) |
 | Speed segment | min-height 44 px |
 | Action button | min-height 56 px, min-width 96 px |
+| Source link | min-height 44 px, full panel width |
 | Time slider | 44 px tall, 28 px thumb |
 
 Known exception: the seven speed segments share the panel width, so on a 320 px phone they are
@@ -127,7 +128,7 @@ Side panel at the desktop breakpoint: 360 px wide, full height, inset 10 px. `ro
 order). Opening it from the chip or the menu button moves focus to its close button; closing it
 (close button, chip, Esc) while focus is inside sends focus back to whatever opened it.
 Order: Weather (auto switch, grid), Speed, Time of day (cycle switch, slider), Island (actions),
-footnote. The footnote reads: "Drag to orbit, pinch or scroll to zoom, drag with two fingers or
+footnote, source link. The footnote reads: "Drag to orbit, pinch or scroll to zoom, drag with two fingers or
 the right button to move, double-tap to reset. Press H to hide the controls and Esc to close this
 panel. Everything here is procedural: no images, no downloads." Keep it to these gestures: it
 wraps to five lines on a 320 px phone (four at 390 px and in the side panel).
@@ -161,6 +162,15 @@ Grid `repeat(auto-fill, minmax(96px, 1fr))`: three columns in the side panel and
 Icon 22 px + label 14/600. Toggles (Auto-rotate, Sound) use `.on` and `aria-pressed`. Erupt is
 `.hot`. The quality button reads "Quality: High" or "Quality: Low"; Sound swaps its icon
 (`volume_up` / `volume_off`).
+
+### Source link
+The last thing in the panel, 12 px under the footnote: `<a class="srcl">` to the project's
+repository (`https://github.com/vincentmakes/OneTinyIsland`), `target="_blank"` with
+`rel="noopener noreferrer"`. It looks like a quiet action button laid out as one row: full
+width, min-height 44 px, radius 14, `--line` border on `--fill`, `--text`, the GitHub mark
+at 22 px + "Source on GitHub" (14/600), centred, never underlined. It is the only link out of
+the page and the only `<a>` in the UI; it gets the standard focus ring and is the last Tab
+stop of the panel.
 
 ### Toast
 Top centre, 70 px below the top (+ safe area), `role="status"`, `aria-live="polite"`. Text 13/600,
@@ -295,10 +305,16 @@ wght 400, GRAD -25, opsz 24**.
   `Be` wraps it in `<svg viewBox="0 -960 960 960" width="24" height="24" fill="currentColor"
   aria-hidden="true" focusable="false">`. Add the glyph to `THIRD-PARTY-NOTICES.md`.
 - **Colour:** always `currentColor`; set `color` on the parent (e.g. `--hot` on Erupt).
-- **Sizes:** 24 px in the chip, FABs and weather buttons; 22 px in action buttons. Nothing else.
+- **Sizes:** 24 px in the chip, FABs and weather buttons; 22 px in action buttons and the source link. Nothing else.
 - **Current glyphs:** `sunny`, `bedtime`, `partly_cloudy_day`, `partly_cloudy_night`, `cloud`,
   `foggy`, `rainy`, `thunderstorm`, `air`, `weather_snowy`, `menu`, `close`, `volcano`, `360`,
   `volume_up`, `volume_off`, `visibility`, `visibility_off`, `speed`, `sailing`.
+- **The one brand mark:** `wn.github` is the GitHub mark from Octicons (`mark-github-24`,
+  release v19.15.0, MIT), used only on the source link, where it says where the link goes. It
+  is not a Material Symbol: it keeps its own `viewBox="0 0 24 24"`, so it is stored as a whole
+  `<svg>` string instead of going through `Be` (same attributes otherwise: `currentColor`,
+  `aria-hidden`, `focusable="false"`). Path data unmodified; listed in
+  `THIRD-PARTY-NOTICES.md`. No other logos.
 
 ## Voice and tone
 
@@ -321,7 +337,8 @@ wght 400, GRAD -25, opsz 24**.
 - Nobody gets hurt, nothing burns or sinks; cannonballs always miss. Storms, eruptions and
   pirates are spectacle, never danger.
 - No scary imagery or words ("explode", "destroy", "die", "warning").
-- No text input, no links out of the page, no accounts, no data collection. The only stored
+- No text input, no accounts, no data collection. One link out of the page: the source link at
+  the bottom of the panel, which opens the project's GitHub repository in a new tab. The only stored
   thing is the hint flag `oti-hint-drag` in `localStorage`.
 - Everything is reversible in one tap: the weather changes back, the volcano calms down, hidden
   controls come back with one button or H.
