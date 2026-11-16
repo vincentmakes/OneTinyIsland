@@ -34,7 +34,10 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 
 ## Controls
 
-- **Drag** to orbit the island, **scroll** or **pinch** to zoom.
+- **Drag** to orbit the island, **scroll** or **pinch** to zoom. Zoom right in, or look straight down from above.
+- **Right-drag** (or **two fingers** on a phone) to slide the view around the island. The view follows the ground, so you can fly over the volcano or peek into the village.
+- **Double-click** (or **double-tap**) to jump back to the starting view.
+- With the island focused (click it, or Tab to it): **arrow keys** move, **Shift + arrows** turn, **+** and **-** zoom, **Home** resets.
 - The **menu button** (bottom right) opens the control panel: weather, auto weather, speed, time of day and the day/night cycle, plus Auto-rotate, Sound, Quality, Erupt, Ahoy! and Hide UI.
 - **Erupt** (also the volcano button next to the menu) sets the volcano off.
 - **Ahoy!** brings the galleon and the pirate ship sailing into view for a meeting (unless the weather keeps them in port).
