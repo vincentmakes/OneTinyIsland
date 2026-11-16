@@ -11,7 +11,9 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **Eight weathers**: clear, partly cloudy, overcast, fog, rain, thunderstorm (with lightning), gale and snow. Left alone, the island picks its own weather every so often.
 - **Day and night**: the sun, moon and stars move on their own, sunsets glow, the village lights come on after dark, and some nights bring an aurora.
 - **A sleepy volcano** that smokes all day and erupts now and then, or whenever you press Erupt.
-- **A little village** with huts, three little terraced paddies with winding walls, whose still water mirrors the sky (ducks included), a jetty, a lighthouse on its own rocky islet and a waterfall.
+- **A little village** with huts, a jetty, a lighthouse on its own rocky islet and a waterfall.
+- **A tiny farm**: a Thai-style windmill whose woven sails turn lazily on calm days and briskly in a storm, and four little wheat beds that grow from bare soil to golden ears, get harvested row by row and start again. Rain makes them grow faster; snow puts them on hold.
+- **A villager with a canoe**: by day they carry it up through the village and past the farm, paddle it down the river under the footbridge and once round the lagoon, then carry it up again. At dusk, or when the weather turns, they tie it up at the jetty and go home.
 - **Wildlife**: seagulls, leaping dolphins, schools of tropical fish in the lagoon and sea turtles.
 - **Snow that settles**: a real snowfall whitens the whole island and freezes the sea, and a snowy night hides a small Christmas surprise.
 - **Boats** bobbing and rolling on the same waves the water shader draws.
@@ -65,6 +67,7 @@ If your browser is fussy about `file://` pages, any static server will do, for e
   __island.setSpeed(30)          // fast-forward time
   __island.setAuto(false)        // stop the weather changing on its own
   __island.info()                // draw calls, triangles, current weather...
+  __island.farm.state()          // the wheat, the windmill and where the villager is
   ```
 
   `__island.weathers` lists all the weather names.
