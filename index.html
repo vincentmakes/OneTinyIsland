@@ -5360,9 +5360,9 @@ void main(){
   vec3 midC = vec3(0.04, 0.55, 0.75);
   vec3 deepC = vec3(0.02, 0.20, 0.45);
   vec3 col = mix(shallowC, lagoonC, smoothstep(0.2, 1.6, depth));
-  col = mix(col, midC, smoothstep(1.4, 4.0, depth) * (1.0 - lag*0.6));
+  col = mix(col, midC, smoothstep(2.5, 6.5, depth) * (1.0 - lag*0.6));
   float od = depth * mix(1.0, 1.0 / max(V.y, 0.4), smoothstep(2.5, 7.0, depth));
-  col = mix(col, deepC, smoothstep(3.5, 9.5, od));
+  col = mix(col, deepC, smoothstep(6.5, 8.8, depth));
   // weather tint
   float lum = dot(col, vec3(0.3,0.5,0.2));
   col = mix(col, vec3(lum)*vec3(0.75,0.85,0.9), uCloudCov*0.45);
