@@ -124,7 +124,10 @@ Side panel at the desktop breakpoint: 360 px wide, full height, inset 10 px. `ro
 order). Opening it from the chip or the menu button moves focus to its close button; closing it
 (close button, chip, Esc) while focus is inside sends focus back to whatever opened it.
 Order: Weather (auto switch, grid), Speed, Time of day (cycle switch, slider), Island (actions),
-footnote.
+footnote. The footnote reads: "Drag to orbit, pinch or scroll to zoom, drag with two fingers or
+the right button to move, double-tap to reset. Press H to hide the controls and Esc to close this
+panel. Everything here is procedural: no images, no downloads." Keep it to these gestures: it
+wraps to five lines on a 320 px phone (four at 390 px and in the side panel).
 
 ### Switch
 `role="switch"` with `aria-checked`; label in `aria-label`, visible label and hint in the row to its
@@ -167,6 +170,30 @@ Shown only while the UI is hidden: 44 px glass circle bottom right with the `vis
 deliberately faint (opacity .38) so screenshots stay clean; 0.8 on hover, 1 on keyboard focus.
 Hiding the UI while focus is inside it moves focus here; restoring moves it to the menu button.
 
+### The island view (canvas)
+The canvas is part of the UI: it takes keyboard focus (`tabindex="0"`, last in the Tab order,
+`role="application"`, `aria-label` "Island view. Arrow keys move, Shift and arrow keys turn, plus
+and minus zoom, Home resets."). Camera keys only act while it has focus, so the time slider keeps
+its arrow keys. Clicking or tapping the scene focuses it without a ring; closing the panel only
+moves focus back to its opener when focus was inside the panel.
+
+| | Mouse | Touch | Keyboard (canvas focused) |
+|---|---|---|---|
+| Orbit | drag | one finger | Shift + arrows (15 × 360° / view height a press: 7.5° at 720 px) |
+| Move (pan over the ground) | right-drag, or Shift / Ctrl + drag | two fingers | arrows |
+| Zoom | scroll wheel | pinch | `+` / `=` in, `-` out (1.25× a press) |
+| Reset view | double-click | double-tap | Home |
+
+Reset is instant (no animation, so nothing to turn off for reduced motion): pivot back to the
+default, default framing. A double-tap is two pointer-ups within 300 ms and 25 px with no drag and
+no second finger in between. Any camera input stops Auto-rotate; it resumes 5 s after the last
+input when it is switched on.
+
+Guard rails: tilt 0.02–1.5 rad from straight up; distance `max(6, 3% of the default framing
+distance)` to 170% of it; the pivot stays within 70 of the default pivot and, once you have moved
+the camera, glides along the ground; the camera never goes below terrain + 3.5 (or the sea), and
+a camera you moved eases up to 9.5 above land so it stays over the treetops.
+
 ### Loading and failure screens
 Loading: sea-blue radial gradient, pulsing 54 px dot, "Shaping a tiny island…", fades out over
 0.6 s. Failure: dark radial gradient, bold title + one friendly line in `--muted`.
@@ -199,7 +226,10 @@ Any new animation needs its reduced-motion rule in the same change.
 
 - **Focus ring:** `:focus-visible` only (mouse and touch clicks stay ring-free): 2 px `--text`
   outline, 2 px offset. The switch draws it inside (offset -2 px), the slider at 0. The chip and
-  FABs, which sit over the scene, add a 6 px `--halo` so the ring shows on snow.
+  FABs, which sit over the scene, add a 6 px `--halo` so the ring shows on snow. The island view's
+  ring is drawn inside the viewport (a fixed `body::after` frame at z-index 1, under the UI layer, inset 4 px, 2 px `--text` border,
+  radius 14, 4 px `--halo` on both sides); browsers without `:has()` get a plain 2 px outline at
+  offset -8 px.
 - **Roles and state:** buttons are `<button>`; toggles carry `aria-pressed` (weather, speed,
   Auto-rotate, Sound), switches `role="switch"` + `aria-checked`, the chip `aria-expanded`. State
   attributes are updated in the same refresh that updates the classes (`N()` in `wf`, every
@@ -213,8 +243,10 @@ Any new animation needs its reduced-motion rule in the same change.
   `--muted` .66), chip weather name 7.42, toast 6.44, panel muted text 5.60–6.71, Erupt FAB icon
   about 4.6. Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
   hover and focus).
-- **Keyboard:** Tab reaches everything visible. **H** hides or shows the UI, **Esc** closes the
-  panel. Enter / Space activate buttons, arrows move the slider.
+- **Keyboard:** Tab reaches everything visible, then the island view. **H** hides or shows the UI,
+  **Esc** closes the panel. Enter / Space activate buttons, arrows move the slider. With the island
+  view focused: arrows move, Shift + arrows orbit, `+` / `-` zoom, Home resets (see The island
+  view).
 - **Zoom:** the viewport has `user-scalable=no` on purpose: pinch is the camera zoom. Text sizes
   are therefore never below 12 px (10 px for the "next" badge only).
 
