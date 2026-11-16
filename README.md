@@ -42,7 +42,7 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **Right-drag** (or **two fingers** on a phone) to slide the view around the island. The view follows the ground, so you can fly over the volcano or peek into the village.
 - **Double-click** (or **double-tap**) to jump back to the starting view.
 - With the island focused (click it, or Tab to it): **arrow keys** move, **Shift + arrows** turn, **+** and **-** zoom, **Home** resets.
-- The **menu button** (bottom right) opens the control panel: weather, auto weather, speed, time of day and the day/night cycle, plus Auto-rotate, Sound, Quality, Erupt, Ahoy! and Hide UI.
+- The **menu button** (bottom right) opens the control panel: weather, auto weather, speed, time of day and the day/night cycle, plus Auto-rotate, Sound, Quality, Erupt, Ahoy! and Hide UI, and a link to the source on GitHub at the bottom.
 - **Erupt** (also the volcano button next to the menu) sets the volcano off.
 - **Ahoy!** brings the galleon and the pirate ship sailing into view for a meeting (unless the weather keeps them in port).
 - **H** hides or shows all the controls, handy for screenshots. **Esc** closes the panel.
@@ -97,6 +97,7 @@ It freezes the weather, the clock and the camera for each shot, steps the simula
 
 - [three.js](https://threejs.org/) r187 is bundled inside `index.html`. It is MIT licensed, © three.js authors.
 - The icons are [Material Symbols Rounded](https://fonts.google.com/icons) by Google, inlined as SVG paths. They are licensed under the Apache License 2.0, © Google LLC.
-- Licence texts and versions for both: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+- The GitHub mark on the panel's source link comes from [Octicons](https://github.com/primer/octicons), MIT licensed, © GitHub Inc.
+- Licence texts and versions for all three: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 - How the controls look and behave, and the rules for changing them: [UI-GUIDELINES.md](UI-GUIDELINES.md).
 - Everything else is © 2026 Vincent Verdet, released under the MIT licence: see [LICENSE](LICENSE).

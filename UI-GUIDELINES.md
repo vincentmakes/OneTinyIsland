@@ -43,9 +43,10 @@ Defined on `:root`. Components use `var(--…)`; a raw colour in a component rul
 
 Illustration colours are the only exceptions and stay inline: the time slider's day gradient
 (`#142048`, `#3a3f7a`, `#ff9a6a`, `#8fd0ff`), the loading screen's sky gradient (`#b3cde0`,
-`#9cb6c8`, `#7593a9`, sampled from the scene's opening frame) and its diorama (facet colours from
-the bundle's palette `ye`, the plinth and the lava; smoke `#f4f7f9`), and the failure screen's
-`#1d4f7a`.
+`#9cb6c8`, `#7593a9`, sampled from the scene's opening frame), its wordmark (sea blues `#1d5a8c`
+and `#2974a6`, volcano rock `#8d8378`, `#6e6560`, `#4a4442`, `#2a2120`, lava `#ff7a3c` and
+`#ffc46b`, palm `#7a5a3a`, `#2f7a35`, `#63ad45`, ink `#13202f`) and its progress track (ink at
+16%), and the failure screen's `#1d4f7a`.
 
 ## Glass surfaces
 
@@ -65,10 +66,10 @@ sans-serif`, antialiased. No web fonts.
 
 | Size | Weight | Where |
 |---|---|---|
-| 20 px | 700 (`b`) | Failure screen title, loading screen name |
+| 20 px | 700 (`b`) | Failure screen title |
 | 17 px | 700 | Panel title |
 | 15 px | 600 / 400 | Chip weather name (600), switch row labels (400), time value (600, tabular), loading and failure text |
-| 14 px | 600 | Speed segments (tabular), action buttons |
+| 14 px | 600 | Speed segments (tabular), action buttons, source link |
 | 13 px | 600 | Toast; section headings (uppercase, 1.2 px tracking, `--muted`) |
 | 12 px | 400 | Chip second line, row hints, weather labels, footnote |
 | 10 px | 600 | "next" badge only |
@@ -100,6 +101,7 @@ Minimum 44 x 44 px for anything you can press.
 | Weather button | min-height 64 px, a quarter of the panel width (66 px wide on a 320 px phone) |
 | Speed segment | min-height 44 px |
 | Action button | min-height 56 px, min-width 96 px |
+| Source link | min-height 44 px, full panel width |
 | Time slider | 44 px tall, 28 px thumb |
 
 Known exception: the seven speed segments share the panel width, so on a 320 px phone they are
@@ -126,7 +128,7 @@ Side panel at the desktop breakpoint: 360 px wide, full height, inset 10 px. `ro
 order). Opening it from the chip or the menu button moves focus to its close button; closing it
 (close button, chip, Esc) while focus is inside sends focus back to whatever opened it.
 Order: Weather (auto switch, grid), Speed, Time of day (cycle switch, slider), Island (actions),
-footnote. The footnote reads: "Drag to orbit, pinch or scroll to zoom, drag with two fingers or
+footnote, source link. The footnote reads: "Drag to orbit, pinch or scroll to zoom, drag with two fingers or
 the right button to move, double-tap to reset. Press H to hide the controls and Esc to close this
 panel. Everything here is procedural: no images, no downloads." Keep it to these gestures: it
 wraps to five lines on a 320 px phone (four at 390 px and in the side panel).
@@ -160,6 +162,15 @@ Grid `repeat(auto-fill, minmax(96px, 1fr))`: three columns in the side panel and
 Icon 22 px + label 14/600. Toggles (Auto-rotate, Sound) use `.on` and `aria-pressed`. Erupt is
 `.hot`. The quality button reads "Quality: High" or "Quality: Low"; Sound swaps its icon
 (`volume_up` / `volume_off`).
+
+### Source link
+The last thing in the panel, 12 px under the footnote: `<a class="srcl">` to the project's
+repository (`https://github.com/vincentmakes/OneTinyIsland`), `target="_blank"` with
+`rel="noopener noreferrer"`. It looks like a quiet action button laid out as one row: full
+width, min-height 44 px, radius 14, `--line` border on `--fill`, `--text`, the GitHub mark
+at 22 px + "Source on GitHub" (14/600), centred, never underlined. It is the only link out of
+the page and the only `<a>` in the UI; it gets the standard focus ring and is the last Tab
+stop of the panel.
 
 ### Toast
 Top centre, 70 px below the top (+ safe area), `role="status"`, `aria-live="polite"`. Text 13/600,
@@ -198,18 +209,28 @@ a camera you moved eases up to 9.5 above land so it stays over the treetops.
 
 ### Loading and failure screens
 Loading: a pale sky gradient matched to the scene's opening frame (so the cross-fade is not a
-jolt), a tiny low-poly diorama of the island (`clamp(150px, 42vmin, 240px)` wide, 4:3) and under
-it "One Tiny Island" (20/700) and "Shaping a tiny island…" (15/400), both in `--ink` (7.8:1 to
-10:1 on the gradient behind them, 5.1:1 at its darkest corner). The art is `aria-hidden`; the text
-is plain text. The diorama is built from HTML wrappers, each holding one static inline SVG layer
-in a shared 200 x 150 frame (plinth and sea, sand and shallows, volcano, hills and pines, huts,
-palms, lighthouse islet), plus three smoke puffs and a cloud. The pieces pop in one after another
-(0 to 1.15 s, then a gentle bob, rising smoke and a drifting cloud for as long as loading takes).
-Only `transform` and `opacity` are animated, on HTML elements, so the compositor keeps it moving
-while the scene build blocks the main thread; never animate anything else here, and never animate
-elements inside the SVGs. Any frame of it must look finished enough, because a fast machine shows
-it for a fraction of a second: no minimum display time. It fades out over 0.6 s once the first
-scene frame has been drawn, then is removed (with reduced motion it disappears at once).
+jolt) and, centred on it with 12 px gaps, the wordmark, the line "Shaping a tiny island…" (15/400,
+`--ink`: 7.8:1 to 10:1 on the gradient behind it, 5.1:1 at its darkest corner) and a progress bar.
+- **Wordmark:** one static inline SVG (`.ld-name`, `clamp(220px, 64vmin, 380px)` wide, 480 x 190
+  frame, `role="img"`, `aria-label="One Tiny Island"`). Low-poly block capitals with straight
+  edges only: "ONE TINY" small in ink over a large "ISLAND" in two sea blues (a jagged lighter
+  facet across the top, clipped to the letters) with an ink extrusion down and to the right. The
+  A is the volcano (three rock facets, crater, lava) and a palm stands on the foot of the L. The
+  blues hold at least 3:1 on the gradient behind them. It is the only place the name is drawn
+  this way; the panel title stays plain text.
+- **Progress bar:** `.ld-bar`, `clamp(160px, 46vmin, 260px)` wide, 8 px tall, radius 4 (the
+  slider track's size), track ink at 16%, fill `--ink`, `aria-hidden` (the line above it says
+  what is happening). The scene build blocks the main thread, so the bar cannot measure anything:
+  it is an estimate that eases from 0 toward 95% over 8 s, quick at first (about half way after
+  1.5 s). When the first scene frame is drawn a second fill sweeps to 100% in 0.25 s while the
+  loader fades.
+- Only `transform` and `opacity` are animated, on HTML elements, so the compositor keeps the bar
+  moving while the scene build blocks the main thread; never animate anything else here, and
+  never animate elements inside the SVG. Any frame of it must look finished, because a fast
+  machine shows it for a fraction of a second: no minimum display time. It fades out over 0.6 s
+  once the first scene frame has been drawn, then is removed. With reduced motion there is no
+  bar (the wordmark and the line stay) and the loader disappears at once.
+
 Without JavaScript a `<noscript>` style hides the loader, so only the noscript message shows and
 nothing animates. Failure: dark radial gradient, bold title + one friendly line in `--muted`; the
 loader is removed at once underneath it.
@@ -233,12 +254,12 @@ Check every UI change at 1280 x 720, 390 x 844 and 320 x 568.
 | Toast, restore button | .3 s | ease |
 | Switch track / thumb | .2 s / .22 s | ease / `cubic-bezier(.3, 1.4, .5, 1)` (overshoot) |
 | Loading fade | .6 s | ease |
-| Loading pieces pop in | .55 s each, staggered 0–1.15 s | `cubic-bezier(.3, 1.6, .6, 1)` (overshoot), rise 14% from half size |
-| Loading idle: bob / smoke / cloud | 4 s / 3.3 s (three puffs 1.1 s apart) / 16 s loops | ease-in-out / ease-out / linear |
+| Loading bar estimate | 8 s, 0 to 95% | `cubic-bezier(.2, .7, .3, 1)` (quick start, long tail) |
+| Loading bar completes | .25 s | ease-out |
 
 `prefers-reduced-motion: reduce` turns all of these off: no transitions on the panel, toast,
 hidden UI, switch, restore button or UI layer, no loading fade (the loader disappears at once),
-and the loading diorama is shown finished and still (one puff of smoke, no bob). Auto-rotate also starts off.
+and no loading bar (the wordmark and the line are enough). Auto-rotate also starts off.
 Any new animation needs its reduced-motion rule in the same change.
 
 ## Accessibility
@@ -260,7 +281,7 @@ Any new animation needs its reduced-motion rule in the same change.
   (snow cover at noon, fog, from above and from the default camera, desktop and phone), not over
   the night sky. Measured worst cases now: chip muted text 4.93:1 (was 3.18 with `--glass` .58 and
   `--muted` .66), chip weather name 7.42, toast 6.44, panel muted text 5.60–6.71, Erupt FAB icon
-  about 4.6, loading text 7.8–10 (5.1 at the gradient's darkest corner). Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
+  about 4.6, loading text 7.8–10 (5.1 at the gradient's darkest corner), loading wordmark blues 3.1 and 4.4. Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
   hover and focus).
 - **Keyboard:** Tab reaches everything visible, then the island view. **H** hides or shows the UI,
   **Esc** closes the panel. Enter / Space activate buttons, arrows move the slider. With the island
@@ -284,10 +305,16 @@ wght 400, GRAD -25, opsz 24**.
   `Be` wraps it in `<svg viewBox="0 -960 960 960" width="24" height="24" fill="currentColor"
   aria-hidden="true" focusable="false">`. Add the glyph to `THIRD-PARTY-NOTICES.md`.
 - **Colour:** always `currentColor`; set `color` on the parent (e.g. `--hot` on Erupt).
-- **Sizes:** 24 px in the chip, FABs and weather buttons; 22 px in action buttons. Nothing else.
+- **Sizes:** 24 px in the chip, FABs and weather buttons; 22 px in action buttons and the source link. Nothing else.
 - **Current glyphs:** `sunny`, `bedtime`, `partly_cloudy_day`, `partly_cloudy_night`, `cloud`,
   `foggy`, `rainy`, `thunderstorm`, `air`, `weather_snowy`, `menu`, `close`, `volcano`, `360`,
   `volume_up`, `volume_off`, `visibility`, `visibility_off`, `speed`, `sailing`.
+- **The one brand mark:** `wn.github` is the GitHub mark from Octicons (`mark-github-24`,
+  release v19.15.0, MIT), used only on the source link, where it says where the link goes. It
+  is not a Material Symbol: it keeps its own `viewBox="0 0 24 24"`, so it is stored as a whole
+  `<svg>` string instead of going through `Be` (same attributes otherwise: `currentColor`,
+  `aria-hidden`, `focusable="false"`). Path data unmodified; listed in
+  `THIRD-PARTY-NOTICES.md`. No other logos.
 
 ## Voice and tone
 
@@ -310,7 +337,8 @@ wght 400, GRAD -25, opsz 24**.
 - Nobody gets hurt, nothing burns or sinks; cannonballs always miss. Storms, eruptions and
   pirates are spectacle, never danger.
 - No scary imagery or words ("explode", "destroy", "die", "warning").
-- No text input, no links out of the page, no accounts, no data collection. The only stored
+- No text input, no accounts, no data collection. One link out of the page: the source link at
+  the bottom of the panel, which opens the project's GitHub repository in a new tab. The only stored
   thing is the hint flag `oti-hint-drag` in `localStorage`.
 - Everything is reversible in one tap: the weather changes back, the volcano calms down, hidden
   controls come back with one button or H.

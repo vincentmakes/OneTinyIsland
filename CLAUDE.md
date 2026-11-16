@@ -12,16 +12,16 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, a
   - `<script id="parrots">`: readable `parrots` plugin (three pairs of red-and-blue macaws).
   - one huge `<script>`: an esbuild-minified IIFE of three.js r187 plus the app. **No sources exist.**
   - `<script id="hints">`: one-time "Drag to look around" toast (`localStorage['oti-hint-drag']`).
-- Loading screen (`#loading`, before the scripts): pale sky gradient matched to the opening frame and a small low-poly diorama of HTML wrappers around static inline SVG layers. It animates only `transform`/`opacity` on HTML elements so the compositor keeps it moving while `jx()` blocks the main thread (about 1.5 s to build plus 1.3 s for the first frame's shader compiles under headless swiftshader).
+- Loading screen (`#loading`, before the scripts): pale sky gradient matched to the opening frame, a static inline SVG wordmark (`.ld-name`: low-poly capitals, the A of ISLAND is the volcano, a palm on the L), the line "Shaping a tiny island…" and a progress bar (`.ld-bar`, two `<i>` fills). The bar is an estimate, not a measurement (`jx()` is one synchronous block): the first fill eases toward 95% over 8 s and the second sweeps to 100% when `done` is added. It animates only `transform` on HTML elements so the compositor keeps it moving while `jx()` blocks the main thread (about 1.5 s to build plus 1.3 s for the first frame's shader compiles under headless swiftshader).
 - `scripts/screenshots.mjs`: Playwright generator for `docs/screenshots/*.jpg` (read its header).
 - `docs/screenshots/`: README images; `hero.jpg` is also the social preview image.
-- `UI-GUIDELINES.md`: the UI system (tokens, type, components, accessibility, icons, voice). `THIRD-PARTY-NOTICES.md`: three.js (MIT) and Material Symbols (Apache 2.0) licence texts.
+- `UI-GUIDELINES.md`: the UI system (tokens, type, components, accessibility, icons, voice). `THIRD-PARTY-NOTICES.md`: three.js (MIT), Material Symbols (Apache 2.0) and Octicons (MIT, the GitHub mark) licence texts.
 - `_headers`: Cloudflare Pages caching and security headers. `README.md`, `LICENSE` (MIT), `.gitignore`.
 
 ## Golden rules
 
 1. One self-contained file: no extra JS/CSS files, no CDN, no fonts, no images loaded by the page.
-2. Zero network requests at runtime. No build step: the repo root is the site.
+2. Zero network requests at runtime (the one link out, "Source on GitHub" at the bottom of the panel, only opens a new tab when pressed). No build step: the repo root is the site.
 3. Kid friendly: nobody gets hurt, nothing burns or sinks. Cannonballs always miss.
 4. Keep `window.__island` (and `__island.ships`, `__island.farm`, `__island.parrots`) stable: the screenshot script, the README and people's consoles use it.
 5. The page must load with a clean console (no errors, no warnings) and keep working without WebGL extras, sound or storage.
@@ -51,7 +51,7 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, a
   | `mf` | wildlife (gulls, dolphins, fish, turtles). Gull frame: built with the body along +x and wings along z, then turned a quarter turn about y, so **the head points along local -z** and the wings lie along x; the yaw is `PI - N` (circling with `sp > 0`) or `-N`, and the bank (Euler XYZ: roll about the body, then yaw) leans each bird into its turn. The two lagoon turtles are one InstancedMesh of 2 (`otiTu`), hidden together under ice |
   | `Mf` | Christmas extras (sleigh and friends; the snowman lives in `uf`) |
   | `ci` / `io` / `hl` | weather presets / weather name list / weather state machine class |
-  | `wn` | SVG icons: Material Symbols Rounded paths wrapped by `Be` (see UI-GUIDELINES.md, Icons) |
+  | `wn` | SVG icons: Material Symbols Rounded paths wrapped by `Be`, plus `wn.github`, the GitHub mark as a whole `<svg>` string for the panel's source link `a.srcl` (see UI-GUIDELINES.md, Icons) |
   | `wf` | UI (panel, toasts, keys) |
   | `ul` | audio class |
   | `jx` | main: renderer, scene, lighting `Te(dt)`, simulation step `Et(dt)`, loop `bt`, frame `otiFrame` (mirror pass, scene, post step), `window.__island` |
