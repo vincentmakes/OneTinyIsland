@@ -5361,7 +5361,7 @@ float otiBh = 0.0; float otiSp = 0.0; float otiGl = 0.0;
     float mx = max(c0.r, max(c0.g, c0.b)); float mn = min(c0.r, min(c0.g, c0.b));
     float warm = smoothstep(0.30, 0.50, (mx - mn)/max(mx, 1e-3)) * step(c0.b, c0.g) * step(c0.g, c0.r);
     float roof = warm * smoothstep(0.15, 0.30, up) * (1.0 - smoothstep(0.85, 0.95, up)) * f1;
-    float row = fract(vOP.y*2.6 + sk*0.2);
+    float row = fract(vOP.y*2.6 + vnoise(vec2(dot(vOP, tq)*2.5, 1.7))*0.3);
     vec3 gc = c0*(1.0 + (m1 - 0.5)*0.14*f1 + (sk - 0.5)*mix(0.12, 0.28, warm)*f2);
     gc *= 1.0 - roof*0.25*smoothstep(0.70, 1.0, row);
     diffuseColor.rgb = gc;
