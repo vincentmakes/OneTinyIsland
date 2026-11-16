@@ -1106,6 +1106,7 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
     F.hub = [mx + axis[0] * MILL.front, my + H, mz + axis[2] * MILL.front];
     F.millYaw = myaw;
     F.field = f;
+    F.hut = T.hut;
     F.built = true;
     return out;
   }
@@ -1324,6 +1325,505 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
       }
     }
 
+    // ======================================================================================
+    // The villager and the canoe
+    // ======================================================================================
+    // By day a villager carries the canoe (the dinghy moored by the jetty, reshaped by the
+    // bundle) up from the lagoon beach, through the village and round the field, launches it
+    // just below the upstream footbridge, paddles down the river under the other footbridge
+    // and once round the lagoon back to the beach. At dusk, in rain, storms or snow they paddle
+    // to the mooring, hand the canoe back to the village (canoe.busy = false) and walk home.
+    const FD = kit.farm, te = kit.terrainHeight, waveH = kit.waveHeight;
+    const boat = FD.canoe && FD.canoe.mesh ? FD.canoe : null;
+    const man = boat && FD.jetty && FD.river ? new Mesh(buildMan(), mat) : null;
+    const pose = { phase: 'home', d: 0, t: 0, x: 0, y: 0, z: 0, yaw: 0, afloat: false };
+    let api2 = {};
+    if (man) {
+      man.castShadow = true;
+      man.matrixAutoUpdate = false;
+      man.visible = false;
+      group.add(man);
+      api2 = setUpVillager();
+    }
+
+    function buildMan() {
+      const P = [];
+      const part = (g, col, x, y, z) => P.push(tint(g, col).translate(x, y, z));
+      const SKIN = 0xd49a6a, SHIRT = 0x2f418c, PANTS = 0xcaa676, HAT = 0xdcc27e, WOOD = 0x8a5c33;
+      for (const s of [-1, 1]) part(new kit.BoxGeometry(0.1, 0.27, 0.1), PANTS, 0, 0.135, s * 0.065);    // legs
+      part(new CylinderGeometry(0.125, 0.15, 0.31, 6), SHIRT, 0, 0.42, 0);                              // shirt
+      for (const s of [-1, 1]) {                                                                          // arms, reaching a little forward
+        const a = new kit.BoxGeometry(0.07, 0.26, 0.07).rotateX(s * 0.2).rotateZ(0.5);
+        part(a, SHIRT, 0.06, 0.45, s * 0.165);
+      }
+      part(new kit.IcosahedronGeometry(0.13, 0), SKIN, 0.01, 0.69, 0);                                   // head
+      part(new kit.ConeGeometry(0.3, 0.17, 8, 1, true), HAT, 0, 0.845, 0);                               // conical palm-leaf hat
+      // single-blade paddle held diagonally on the right (+z) side: grip at the chest, blade low behind
+      const a = [0.16, 0.6, 0.2], b = [-0.36, -0.08, 0.28];
+      const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz);
+      const orient = (g) => g.rotateZ(-Math.atan2(Math.hypot(dx, dz), dy)).rotateY(-Math.atan2(dz, dx));
+      P.push(tint(orient(new CylinderGeometry(0.016, 0.016, L, 4, 1, true)), WOOD).translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2));
+      const k = 0.84;
+      P.push(tint(orient(new kit.BoxGeometry(0.11, 0.26, 0.03)), 0x9a6a3c).translate(a[0] + dx * k, a[1] + dy * k, a[2] + dz * k));
+      return merge(P);
+    }
+
+    function setUpVillager() {
+      const J = FD.jetty, ja = J.dir[0], jl = J.dir[1];
+      // jetty frame: s along the jetty from its root, q across it toward the mooring side
+      const JW = (s, q) => [J.J0.x + ja * s - jl * q, J.J0.z + jl * s + ja * q];
+      const moor = boat.moor, DECK = J.deck + 0.05;
+      const onJetty = (x, z) => {
+        const rx = x - J.J0.x, rz = z - J.J0.z, s = rx * ja + rz * jl, q = -rx * jl + rz * ja;
+        return s > -0.3 && s < J.len + 0.2 && Math.abs(q) < J.width / 2;
+      };
+      const ground = (x, z) => (onJetty(x, z) ? Math.max(te(x, z), DECK) : te(x, z));
+      const LC = { x: 32, z: 13 };                     // lagoon centre
+      const polar = (a, r) => [LC.x + Math.cos(a) * r, LC.z + Math.sin(a) * r];
+
+      // ---------- tracks: polylines resampled every 0.2 units ----------
+      const chaikin = (pts, n) => {
+        for (let k = 0; k < n; k++) {
+          const o = [pts[0]];
+          for (let i = 0; i < pts.length - 1; i++) {
+            const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+            o.push([ax * 0.75 + bx * 0.25, az * 0.75 + bz * 0.25], [ax * 0.25 + bx * 0.75, az * 0.25 + bz * 0.75]);
+          }
+          o.push(pts[pts.length - 1]);
+          pts = o;
+        }
+        return pts;
+      };
+      const catmull = (pts, per) => {
+        const o = [];
+        for (let i = 0; i < pts.length - 1; i++) {
+          const p0 = pts[Math.max(i - 1, 0)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(i + 2, pts.length - 1)];
+          for (let j = 0; j < per; j++) {
+            const t = j / per, t2 = t * t, t3 = t2 * t;
+            const f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+            o.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+          }
+        }
+        o.push(pts[pts.length - 1]);
+        return o;
+      };
+      function makeTrack(pts, yAt) {
+        let L = 0;
+        const len = [0];
+        for (let i = 1; i < pts.length; i++) len.push((L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])));
+        const n = Math.max(2, Math.ceil(L / 0.2) + 1), X = new Float32Array(n), Z = new Float32Array(n), Y = new Float32Array(n);
+        let j = 0;
+        for (let i = 0; i < n; i++) {
+          const d = (L * i) / (n - 1);
+          while (j < pts.length - 2 && len[j + 1] < d) j++;
+          const f = clamp((d - len[j]) / (len[j + 1] - len[j] || 1), 0, 1);
+          X[i] = pts[j][0] + (pts[j + 1][0] - pts[j][0]) * f;
+          Z[i] = pts[j][1] + (pts[j + 1][1] - pts[j][1]) * f;
+          Y[i] = yAt ? yAt(X[i], Z[i], i / (n - 1)) : 0;
+        }
+        return { X, Z, Y, n, len: L, step: L / (n - 1) };
+      }
+      // point d along a track (reverse: from its end): position, height and heading into out
+      function sample(tr, d, out, reverse) {
+        d = clamp(d, 0, tr.len);
+        if (reverse) d = tr.len - d;
+        const f = d / tr.step, i = Math.min(Math.floor(f), tr.n - 2), k = f - i;
+        out.x = tr.X[i] + (tr.X[i + 1] - tr.X[i]) * k;
+        out.z = tr.Z[i] + (tr.Z[i + 1] - tr.Z[i]) * k;
+        out.y = tr.Y[i] + (tr.Y[i + 1] - tr.Y[i]) * k;
+        const a = Math.max(0, i - 2), b = Math.min(tr.n - 1, i + 3);
+        let hx = tr.X[b] - tr.X[a], hz = tr.Z[b] - tr.Z[a];
+        if (reverse) { hx = -hx; hz = -hz; }
+        out.yaw = Math.atan2(-hz, hx);
+        return out;
+      }
+
+      // the river leg: from just below the upstream footbridge to where the river meets the lagoon
+      const bridgeUp = FD.bridges.reduce((b, c) => (c.x < b.x ? c : b));
+      const bridgeDown = FD.bridges.reduce((b, c) => (c.x > b.x ? c : b));
+      const riverDist = (x, z) => {                    // distance to the river's centre line, and u there
+        const p = FD.river;
+        let best = 1e9, bu = 0;
+        for (let i = 0; i < p.length - 1; i++) {
+          const ax = p[i][0], az = p[i][1], ex = p[i + 1][0] - ax, ez = p[i + 1][1] - az;
+          const f = clamp(((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez), 0, 1);
+          const d = Math.hypot(ax + ex * f - x, az + ez * f - z);
+          if (d < best) { best = d; bu = (i + f) / (p.length - 1); }
+        }
+        return [best, bu];
+      };
+      const uBridge = riverDist(bridgeUp.x, bridgeUp.z)[1];
+      let uStart = uBridge;
+      for (let k = 0; k < 400; k++) {                  // 1.9 units downstream of the bridge
+        const [x0, z0] = FD.riverAt(uBridge), [x1, z1] = FD.riverAt(uStart);
+        if (Math.hypot(x1 - x0, z1 - z0) >= 1.9) break;
+        uStart += 0.0005;
+      }
+      let uEnd = 0.99;
+      while (uEnd > 0.9 && FD.riverSurface(uEnd) <= 0.06) uEnd -= 0.002;
+      uEnd += 0.012;
+      const rpts = [FD.riverAt(uStart)];
+      FD.river.forEach((p, i) => { const u = i / (FD.river.length - 1); if (u > uStart + 0.01 && u < uEnd - 0.01) rpts.push(p); });
+      rpts.push(FD.riverAt(uEnd));
+      const riverY = (x, z) => FD.riverSurface(riverDist(x, z)[1]);
+      const river = makeTrack(chaikin(rpts, 3), riverY);
+      // smooth the water line (the river steps down where it meets the lagoon)
+      { const Y = river.Y, T = Float32Array.from(Y), w = 6;
+        for (let i = 0; i < river.n; i++) { let s = 0, c = 0; for (let k = -w; k <= w; k++) { const j = i + k; if (j >= 0 && j < river.n) { s += T[j]; c++; } } Y[i] = s / c; } }
+      const R0 = sample(river, 0, {}), RE = sample(river, river.len, {});
+
+      // the bank where the canoe goes in (north side, by the upstream footbridge)
+      const rw = FD.riverWidth(uStart), side = Math.cos(R0.yaw) > 0 ? 1 : -1;   // north bank: the path comes down from the north
+      const bank = [R0.x + Math.sin(R0.yaw) * side * (rw + 0.45), R0.z + Math.cos(R0.yaw) * side * (rw + 0.45)];
+
+      // the beach landing beside the jetty root, on the mooring side
+      const landing = JW(2.6, 2.5), stepOut = JW(0.8, 3.4), deckSpot = JW(moor.x !== undefined ? ((moor.x - J.J0.x) * ja + (moor.z - J.J0.z) * jl) : 5, 0.42);
+
+      // lagoon: from the river mouth the long way round (never across the jetty) to the landing
+      const lagoonPts = [[RE.x, RE.z], [RE.x + Math.cos(RE.yaw) * 1.6, RE.z - Math.sin(RE.yaw) * 1.6],
+        polar(3.62, 11.2), polar(4.05, 10.1), polar(4.6, 9.7), polar(5.2, 10.1), polar(5.8, 9.9), polar(0.2, 9.6),
+        polar(0.72, 9.4), polar(1.25, 9.9), JW(9.6, 7.15), JW(6.8, 5.8)];
+      const branchAt = lagoonPts.length - 1;           // evening: head for the mooring from here
+      const lagoon = makeTrack(catmull(lagoonPts.concat([JW(4.6, 4.2), JW(3.4, 3.0), landing]), 8));
+      const branchD = (() => { const [bx, bz] = lagoonPts[branchAt]; let best = 1e9, bd = 0;
+        for (let i = 0; i < lagoon.n; i++) { const d = Math.hypot(lagoon.X[i] - bx, lagoon.Z[i] - bz); if (d < best) { best = d; bd = i * lagoon.step; } } return bd; })();
+      const moorS = (moor.x - J.J0.x) * ja + (moor.z - J.J0.z) * jl, moorQ = -(moor.x - J.J0.x) * jl + (moor.z - J.J0.z) * ja;
+      // evenings: turn round in open water, then back into the berth (the jetty on one side, a bungalow ahead)
+      const toMooring = makeTrack(catmull([lagoonPts[branchAt], JW(5.2, 4.8), JW(4.3, 3.9), JW(4.6, 3.0), JW(5.6, 2.75)], 8));
+      const berth = makeTrack(catmull([JW(5.6, 2.75), JW(5.3, 2.0), JW(moorS, moorQ)], 8));
+      berth.fixedYaw = moor.rot;
+      // mornings: draw the canoe sideways out of its berth and back it onto the beach, keeping its heading
+      const toLanding = makeTrack(catmull([JW(moorS, moorQ), JW(moorS - 0.8, moorQ + 0.5), JW(3.5, 2.4), landing], 8));
+      toLanding.fixedYaw = moor.rot;
+
+      // walks (heights from the ground, the jetty deck where on it)
+      const g = (x, z) => ground(x, z);
+      const f = FD.field || F.field, FW = F.field.toWorld;
+      const P = FD.paths;
+      const homeHut = FD.huts.slice().sort((a, b) => Math.hypot(a.door[0] - J.J0.x, a.door[1] - J.J0.z) - Math.hypot(b.door[0] - J.J0.x, b.door[1] - J.J0.z))[0];
+      const walkHome = makeTrack([deckSpot, JW(0.4, 0.1), [J.J0.x, J.J0.z], [homeHut.door[0], homeHut.door[1]]], g);
+      const p3 = P[3], p0 = P[0], p2 = P[2];
+      const fieldEdge = [[6.3, 1.0], [6.35, -0.4], [6.05, -1.9], [5.45, -3.15]].map((p) => FW(p[0], p[1]));
+      const portagePts = [stepOut, JW(0.4, 1.6), [J.J0.x, J.J0.z]]
+        .concat(p3.slice(1).reverse())                     // jetty root -> village plaza, then round the north of
+        .concat([[FD.plaza[0] + 1, FD.plaza[1] + 2.4], [FD.plaza[0], FD.plaza[1] + 2.6], [FD.plaza[0] - 2.5, FD.plaza[1] - 0.4]])   // the well (the campfire is to the south)
+        .concat(p0.slice(1))                               // plaza -> the field's east rim
+        .concat(fieldEdge)                                 // round the field, past the field hut
+        .concat(p2.slice(0, 4))                            // down toward the upstream footbridge
+        .concat([[p2[3][0] + (p2[4][0] - p2[3][0]) * 0.12, p2[3][1] + (p2[4][1] - p2[3][1]) * 0.12], bank]);
+      const portage = makeTrack(chaikin(portagePts, 2), g);
+
+      // called home just as they reach the beach: back off it, then the evening way into the berth
+      const reJoin = JW(5.2, 4.8);
+      const reMoor = makeTrack([landing, JW(3.8, 3.5), reJoin]);
+      reMoor.backwards = true;
+      const reJoinD = (() => { let best = 1e9, bd = 0; for (let i = 0; i < toMooring.n; i++) { const d = Math.hypot(toMooring.X[i] - reJoin[0], toMooring.Z[i] - reJoin[1]); if (d < best) { best = d; bd = i * toMooring.step; } } return bd; })();
+      const tracks = { walkOut: walkHome, toLanding, portage, river, lagoon, toMooring, berth, reMoor, walkHome };
+
+      // ---------- poses ----------
+      const LOC = new Matrix4(), MQ = new Quaternion(), ME = new Euler(), MV = new Vector3(), MS = new Vector3(1, 1, 1);
+      const SEAT = { x: -0.28, y: -0.08 };
+      const smp = { x: 0, y: 0, z: 0, yaw: 0 }, smp2 = { x: 0, y: 0, z: 0, yaw: 0 };
+      const cp = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };   // canoe pose
+      let stroke = 0, step = 0, cyaw = 0, myaw = 0, duck = 0, out = null, first = true;
+      const wrap = (a) => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
+      const ease = (k) => k * k * (3 - 2 * k);
+      const setCanoe = () => {
+        boat.mesh.position.set(cp.x, cp.y, cp.z);
+        boat.mesh.rotation.set(cp.roll, cp.yaw, cp.pitch, 'YXZ');
+        boat.mesh.updateMatrix();
+      };
+      // standing / walking villager
+      const placeMan = (x, y, z, yaw, pitch, roll) => {
+        ME.set(roll, yaw, pitch, 'YXZ');
+        man.matrix.compose(MV.set(x, y, z), MQ.setFromEuler(ME), MS);
+        pose.x = x; pose.y = y; pose.z = z; pose.yaw = yaw;
+      };
+      // villager seated in the canoe (k = 1), or part way out of it toward (x, y, z) (k < 1)
+      const seatMan = (lean, roll, k, x, y, z, yaw) => {
+        ME.set(roll, 0, -lean, 'YXZ');
+        LOC.compose(MV.set(SEAT.x, SEAT.y, 0), MQ.setFromEuler(ME), MS);
+        man.matrix.multiplyMatrices(boat.mesh.matrix, LOC);
+        if (k < 1) {                                   // blend toward a standing pose (position only)
+          const e = man.matrix.elements, hop = Math.sin(Math.PI * k) * 0.25;
+          const sx = e[12], sy = e[13], sz = e[14];
+          placeMan(x + (sx - x) * k, y + (sy - y) * k + hop, z + (sz - z) * k, yaw + wrap(cyaw - yaw) * k, -0.1 * (1 - k), 0);
+          return;
+        }
+        const e = man.matrix.elements;
+        pose.x = e[12]; pose.y = e[13]; pose.z = e[14]; pose.yaw = cp.yaw;
+      };
+      // canoe floating on the lagoon at (x, z)
+      const floatLagoon = (x, z, yaw, t, sea, q) => {
+        const c = Math.cos(yaw), s = Math.sin(yaw);
+        cp.x = x; cp.z = z; cp.yaw = yaw;
+        cp.y = waveH(x, z, t, sea) * q;
+        const gt = (waveH(x + c, z - s, t, sea) - waveH(x - c, z + s, t, sea)) * q * 0.5;
+        const gf = (waveH(x + s, z + c, t, sea) - waveH(x - s, z - c, t, sea)) * q * 0.5;
+        cp.pitch = gt * 0.6 + 0.02; cp.roll = -gf * 0.9;
+      };
+      const overhead = (x, y, z, yaw, bob) => {
+        cp.x = x + Math.cos(yaw) * 0.05; cp.z = z - Math.sin(yaw) * 0.05; cp.y = y + 0.97 + bob; cp.yaw = yaw;
+        cp.pitch = 0.03 + bob * 0.6; cp.roll = Math.PI + Math.sin(step * 0.5) * 0.03;
+      };
+
+      function want(env) {
+        const ok = env.night < 0.25 && env.rain < 0.5 && env.calmK > 0.78 && env.snowCover < 0.2 && env.ice < 0.1;
+        const bad = env.night > 0.4 || env.rain > 0.66 || env.calmK < 0.62 || env.snowCover > 0.38 || env.ice > 0.2;
+        out = out === null ? ok : out ? !bad : ok;
+        return out;
+      }
+      function goHomeNow() {
+        pose.phase = 'home'; pose.d = 0; pose.t = 0; pose.afloat = false;
+        man.visible = false; boat.busy = false;
+      }
+      function setPhase(ph, d = 0) {
+        pose.phase = ph; pose.d = d; pose.t = 0;
+        pose.afloat = ph === 'toLanding' || ph === 'river' || ph === 'lagoon' || ph === 'toMooring' || ph === 'reMoor' || ph === 'berth';
+      }
+
+      function update(t, dt, env) {
+        const sea = env.sea;
+        if (env.ice > 0.2 || env.snowCover > 0.5) { if (pose.phase !== 'home') goHomeNow(); return; }
+        const go = want(env);
+        if (first) { first = false; if (!go) { goHomeNow(); return; } }
+        if (pose.phase === 'home') {
+          if (!go) return;
+          setPhase('walkOut');
+          boat.busy = false;
+          man.visible = true;
+        }
+        man.visible = true;
+        const ph = pose.phase;
+        step += dt * 7.5;
+        stroke += dt * (TAU / 1.45);
+        const sk = Math.max(0, Math.sin(stroke));    // the pull of each stroke
+        const lean = 0.16 + 0.16 * Math.sin(stroke), proll = 0.1 * (0.5 + 0.5 * Math.sin(stroke - 0.6));
+        const turnTo = (target, rate) => { myaw += wrap(target - myaw) * (1 - Math.exp(-dt * rate)); return myaw; };
+
+        if (ph === 'walkOut' && !go) { setPhase('walkHome', walkHome.len - pose.d); return update(t, 0, env); }
+        if (ph === 'walkOut' || ph === 'walkHome' || ph === 'portage') {
+          const tr = tracks[ph], rev = ph === 'walkOut', spd = ph === 'portage' ? 1.2 : 1.3;
+          pose.d += spd * dt;
+          sample(tr, pose.d, smp, rev);
+          sample(tr, pose.d + 0.6, smp2, rev);
+          const yaw = turnTo(smp2.yaw, 5);
+          const bob = Math.abs(Math.sin(step)) * 0.035;
+          placeMan(smp.x, smp.y + bob, smp.z, yaw, ph === 'portage' ? -0.06 : -0.03, Math.sin(step) * 0.05);
+          if (ph === 'portage') { overhead(smp.x, smp.y, smp.z, yaw, bob * 0.8); setCanoe(); }
+          if (pose.d >= tr.len) {
+            if (ph === 'walkOut') { setPhase('board'); boat.busy = true; cyaw = boat.mesh.rotation.y; }
+            else if (ph === 'walkHome') goHomeNow();
+            else setPhase('launch');
+          }
+          return;
+        }
+        if (ph === 'board' || ph === 'unboard') {         // between the jetty deck and the seat
+          pose.t += dt;
+          const k = clamp(pose.t / 1.1, 0, 1);
+          floatLagoon(moor.x, moor.z, moor.rot + Math.sin(t * 0.3) * 0.08, t, sea, 0.25);
+          cyaw = cp.yaw;
+          setCanoe();
+          const kk = ph === 'board' ? ease(k) : 1 - ease(k);
+          const dyaw = Math.atan2(-(moor.z - deckSpot[1]), moor.x - deckSpot[0]);
+          seatMan(0.1, 0, kk, deckSpot[0], DECK, deckSpot[1], ph === 'board' ? dyaw : dyaw + Math.PI);
+          if (pose.t >= 1.5) {
+            if (ph === 'board') setPhase('toLanding');
+            else { boat.busy = false; setPhase('walkHome'); }
+          }
+          return;
+        }
+        if (ph === 'disembark' || ph === 'lift') {
+          pose.t += dt;
+          const sy = te(stepOut[0], stepOut[1]);
+          const toPath = Math.atan2(-(J.J0.z - stepOut[1]), J.J0.x - stepOut[0]);
+          if (ph === 'disembark') {
+            sample(lagoon, lagoon.len, smp);
+            floatLagoon(smp.x, smp.z, cyaw, t, sea, 0.1);
+            cp.y = Math.max(cp.y, -0.02); cp.pitch += Math.cos(cyaw - smp.yaw) > 0 ? 0.06 : -0.06;
+            setCanoe();
+            const k = ease(clamp(pose.t / 1.0, 0, 1));
+            seatMan(0.05, 0, 1 - k, stepOut[0], sy, stepOut[1], toPath);
+            if (pose.t >= 1.3) { setPhase('lift'); myaw = toPath; }
+          } else {                                          // swing the canoe up and over the head
+            const k = ease(clamp(pose.t / 1.6, 0, 1));
+            sample(lagoon, lagoon.len, smp);
+            const x0 = smp.x, z0 = smp.z, y0 = -0.02, yawA = cyaw;
+            overhead(stepOut[0], sy, stepOut[1], toPath, 0);
+            cp.x = x0 + (cp.x - x0) * k; cp.z = z0 + (cp.z - z0) * k;
+            cp.y = y0 + (cp.y - y0) * k + Math.sin(Math.PI * k) * 0.35;
+            cp.yaw = yawA + wrap(toPath - yawA) * k;
+            cp.roll = Math.PI * k; cp.pitch = 0.08 * (1 - k);
+            setCanoe();
+            placeMan(stepOut[0], sy, stepOut[1], toPath, -0.08 * Math.sin(Math.PI * k), 0);
+            if (pose.t >= 2.1) setPhase('portage');
+          }
+          return;
+        }
+        if (ph === 'launch' || ph === 'embark') {
+          pose.t += dt;
+          const by = te(bank[0], bank[1]);
+          const toRiver = Math.atan2(-(R0.z - bank[1]), R0.x - bank[0]);
+          if (ph === 'launch') {                            // the canoe flips down onto the water
+            const k = ease(clamp(pose.t / 1.6, 0, 1));
+            const yaw = turnTo(toRiver, 4);
+            overhead(bank[0], by, bank[1], yaw, 0);
+            const x0 = cp.x, y0 = cp.y, z0 = cp.z, yaw0 = cp.yaw;
+            cp.x = x0 + (R0.x - x0) * k; cp.z = z0 + (R0.z - z0) * k;
+            cp.y = y0 + (R0.y - y0) * k + Math.sin(Math.PI * k) * 0.25;
+            cp.yaw = yaw0 + wrap(R0.yaw - yaw0) * k;
+            cp.roll = Math.PI * (1 - k); cp.pitch = 0;
+            setCanoe();
+            cyaw = cp.yaw;
+            placeMan(bank[0], by, bank[1], yaw, -0.1 * Math.sin(Math.PI * k), 0);
+            if (pose.t >= 2.0) setPhase('embark');
+          } else {
+            cp.x = R0.x; cp.z = R0.z; cp.y = R0.y + Math.sin(t * 2) * 0.01; cp.yaw = R0.yaw; cp.pitch = 0; cp.roll = 0;
+            setCanoe();
+            const k = ease(clamp(pose.t / 1.0, 0, 1));
+            seatMan(0.08, 0, k, bank[0], by, bank[1], toRiver);
+            if (pose.t >= 1.4) setPhase('river');
+          }
+          return;
+        }
+        // afloat: river, lagoon, to the landing or to the mooring
+        const tr = tracks[ph], spd = ph === 'river' ? 1.8 : 1.2;
+        pose.d += spd * dt * (0.873 + 0.4 * sk);            // a surge with each stroke (averages to spd)
+        const end = tr.len;
+        sample(tr, pose.d, smp);
+        sample(tr, pose.d + 0.9, smp2);
+        cyaw += wrap((tr.fixedYaw !== undefined ? tr.fixedYaw : smp2.yaw + (tr.backwards ? Math.PI : 0)) - cyaw) * (1 - Math.exp(-dt * 3));
+        const wob = Math.sin(stroke) * 0.035;            // yaws a hair with each stroke
+        if (ph === 'river') {
+          const k = smoothstep(end - 2.5, end, pose.d);
+          sample(tr, pose.d - 1.1, smp2); const yb = smp2.y;
+          sample(tr, pose.d + 1.1, smp2); const yf = smp2.y;
+          floatLagoon(smp.x, smp.z, cyaw + wob, t, sea, 0.25);
+          const wy = cp.y;
+          cp.y = smp.y + (wy - smp.y) * k + Math.sin(t * 2.3) * 0.008;
+          cp.pitch = Math.atan2(yf - yb, 2.2) * (1 - k) + cp.pitch * k;
+          cp.roll = Math.sin(stroke - 0.4) * 0.03;
+          duck = smoothstep(2.6, 1.0, Math.hypot(smp.x - bridgeDown.x, smp.z - bridgeDown.z));
+        } else {
+          floatLagoon(smp.x, smp.z, cyaw + wob, t, sea, 0.25);
+          cp.roll += Math.sin(stroke - 0.4) * 0.03;
+          duck = 0;
+          if (ph === 'toLanding' || (ph === 'lagoon' && pose.d > end - 2)) {
+            const k = smoothstep(end - 2, end, pose.d);   // nose up onto the sand
+            cp.y = cp.y * (1 - k) + Math.max(cp.y, -0.02) * k; cp.pitch += (tr.backwards ? -0.06 : 0.06) * k;
+          }
+        }
+        setCanoe();
+        seatMan(lean + duck * 0.45, proll * (1 - duck), 1);
+        if (ph === 'lagoon' && !go && pose.d >= branchD) { setPhase('toMooring'); return; }
+        if (pose.d >= end) {
+          if (ph === 'river') setPhase('lagoon');
+          else if (ph === 'reMoor') setPhase('toMooring', reJoinD);
+          else if (ph === 'toMooring') setPhase('berth');
+          else if (ph === 'berth') setPhase('unboard');
+          else setPhase(go ? 'disembark' : 'reMoor');     // at the landing (toLanding or lagoon)
+        }
+      }
+
+      // ---------- checks for tests: worst values along the whole route ----------
+      function check() {
+        const huts = FD.huts.map((h) => ({ x: h.x, z: h.z, r: h.round ? 1.25 : 1.15 }));
+        if (F.hut) huts.push({ x: F.hut.x, z: F.hut.z, r: 1.0 });
+        for (const [x, z, r] of FD.props || []) huts.push({ x, z, r });
+        const res = { walkHutClear: 1e9, canoeHutClear: 1e9, walkMinGround: 1e9, riverBankClear: 1e9, bridgeHeadroom: 1e9,
+          lagoonMinDepth: 1e9, jettyClear: 1e9, harbourClear: 1e9, bungalowClear: 1e9, fishingBoatClear: 1e9, nan: 0, lengths: {} };
+        const o = { x: 0, y: 0, z: 0, yaw: 0 }, where = {};
+        const low = (k, v, tr, d, x, z) => { if (v < res[k]) { res[k] = v; where[k] = [tr, +d.toFixed(1), +x.toFixed(2), +z.toFixed(2)]; } };
+        for (const k in tracks) res.lengths[k] = +tracks[k].len.toFixed(1);
+        const hutClear = (x, z) => huts.reduce((m, h) => Math.min(m, Math.hypot(x - h.x, z - h.z) - h.r), 1e9);
+        for (const name of ['walkHome', 'portage']) {
+          const tr = tracks[name];
+          for (let d = 0; d <= tr.len; d += 0.1) {
+            sample(tr, d, o);
+            if (!isFinite(o.x + o.y + o.z + o.yaw)) res.nan++;
+            if (name === 'walkHome' && d > tr.len - 0.7) continue;      // up to the door itself
+            low('walkHutClear', hutClear(o.x, o.z) - 0.2, name, d, o.x, o.z);
+            if (!onJetty(o.x, o.z) && (name !== 'portage' || d > 0.8)) low('walkMinGround', te(o.x, o.z), name, d, o.x, o.z);
+            if (name === 'portage') {                                   // the canoe overhead: bow and stern
+              const c = Math.cos(o.yaw), s = -Math.sin(o.yaw);
+              for (const e of [-1.3, -0.65, 0.65, 1.3]) low('canoeHutClear', hutClear(o.x + c * e, o.z + s * e) - 0.3, name, d, o.x + c * e, o.z + s * e);
+            }
+          }
+        }
+        // river: bow, middle and stern inside the banks; headroom under the footbridge
+        for (let d = 0; d <= river.len; d += 0.1) {
+          sample(river, d, o);
+          if (!isFinite(o.x + o.y + o.z)) res.nan++;
+          const c = Math.cos(o.yaw), s = -Math.sin(o.yaw);
+          for (const e of [-1.25, 0, 1.25]) {
+            const [dd, u] = riverDist(o.x + c * e, o.z + s * e);
+            if (d + e > 0.5 && d + e < river.len - 2) low('riverBankClear', FD.riverWidth(u) - dd - 0.3, 'river', d, o.x + c * e, o.z + s * e);
+          }
+          const db = Math.hypot(o.x - bridgeDown.x, o.z - bridgeDown.z);
+          if (db < 1.2) {
+            const dk = smoothstep(2.6, 1.0, db), lean = 0.32 + dk * 0.45;   // worst moment of the stroke
+            const top = o.y + SEAT.y + 0.95 * Math.cos(lean);                // hat tip, seated and ducking
+            low('bridgeHeadroom', bridgeDown.deck + 0.3 - 0.05 - top, 'river', d, o.x, o.z);
+          }
+        }
+        // lagoon legs: depth, jetty, bungalows, fishing boat (hull points every 0.65 along)
+        const J0 = J.J0, JE = J.JE;
+        const segD = (x, z, ax, az, bx, bz) => { const ex = bx - ax, ez = bz - az, f = clamp(((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez), 0, 1); return Math.hypot(ax + ex * f - x, az + ez * f - z); };
+        for (const name of ['lagoon', 'toMooring', 'berth', 'toLanding', 'reMoor']) {
+          const tr = tracks[name];
+          for (let d = 0; d <= tr.len; d += 0.1) {
+            sample(tr, d, o);
+            if (!isFinite(o.x + o.z)) res.nan++;
+            const harbour = name !== 'lagoon' || d > tr.len - 2.2;                      // manoeuvres by the jetty root and the berth
+            const nearEnds = (name === 'lagoon' && (d < 2.5 || d > tr.len - 2.2)) || name === 'berth' ||
+              (name === 'toLanding' && (d < 2.6 || d > tr.len - 2.2)) || (name === 'reMoor' && (d < 2.2 || d > tr.len - 2.6));
+            const hy = tr.fixedYaw !== undefined ? tr.fixedYaw : o.yaw, c = Math.cos(hy), s = -Math.sin(hy);
+            for (const e of [-1.3, -0.65, 0, 0.65, 1.3]) {
+              const x = o.x + c * e, z = o.z + s * e;
+              if (!nearEnds) {
+                low('lagoonMinDepth', -te(x, z), name, d, x, z);
+              }
+              const jd = segD(x, z, J0.x, J0.z, JE.x, JE.z) - J.width / 2 - 0.3;
+              if (harbour) low('harbourClear', jd, name, d, x, z); else low('jettyClear', jd, name, d, x, z);
+              for (const [bx, bz] of FD.bungalows) {
+                const rx = x - bx, rz = z - bz, sa = Math.abs(rx * ja + rz * jl), qa = Math.abs(-rx * jl + rz * ja);
+                const bd = Math.hypot(Math.max(sa - 1.4, 0), Math.max(qa - 1.4, 0)) - 0.3;
+                if (harbour) low('harbourClear', bd, name, d, x, z); else low('bungalowClear', bd, name, d, x, z);
+              }
+              low('fishingBoatClear', Math.hypot(x - FD.fishing.x, z - FD.fishing.z) - FD.fishing.drift - 1.5 - 0.3, name, d, x, z);
+            }
+          }
+        }
+        for (const k in res) if (typeof res[k] === 'number') res[k] = +res[k].toFixed(2);
+        res.where = where;
+        res.ok = res.nan === 0 && res.walkHutClear > 0 && res.canoeHutClear > 0 && res.walkMinGround > 0 && res.riverBankClear > 0 &&
+          res.bridgeHeadroom > 0 && res.lagoonMinDepth > 0.5 && res.jettyClear > 1.2 && res.harbourClear > 0 && res.bungalowClear > 1.2 && res.fishingBoatClear > 1.2;
+        return res;
+      }
+
+      // start: out on the walk up from the beach (sent home on the first frame if it is night)
+      const VA = {
+        update,
+        check,
+        tracks,
+        set(phase, progress) {
+          const p = clamp(+progress || 0, 0, 1);
+          if (phase === 'home') { goHomeNow(); return; }
+          if (!(phase in tracks) && !['board', 'unboard', 'disembark', 'lift', 'launch', 'embark'].includes(phase)) return false;
+          const tr = tracks[phase];
+          setPhase(phase, tr ? tr.len * p : 0);
+          if (!tr) pose.t = p * 1.4;
+          boat.busy = phase !== 'walkOut' && phase !== 'walkHome';
+          man.visible = true;
+          if (tr) { sample(tr, pose.d, smp, phase === 'walkOut'); myaw = smp.yaw; cyaw = tr.fixedYaw !== undefined ? tr.fixedYaw : smp.yaw + (tr.backwards ? Math.PI : 0); }
+          return true;
+        },
+        reset() { out = null; },
+      };
+      VA.set('portage', 0.3);
+      return VA;
+    }
+
     // ---------- per frame ----------
     updateWheat(0, null, true);
     let lastEnv = null;
@@ -1338,6 +1838,7 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
       advance(dt, env, kit.state.speed || 1);
       updateWheat(dt, env, redraw);
       redraw = 0;
+      if (man) api2.update(t, dt, env);
     }
 
     const api = {
@@ -1347,6 +1848,9 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
           beds: beds.map((b) => ({ phase: +b.phase.toFixed(4), stage: stageOf(b.phase), height: +(() => { tuftLook({ r: 0.5, u: 0.5 }, b.phase); return look.h; })().toFixed(3) })),
           moisture: +moisture.toFixed(3),
           windmill: { speed: +omega.toFixed(3), angle: +angle.toFixed(3) },
+          villager: man ? { phase: pose.phase, x: +pose.x.toFixed(2), y: +pose.y.toFixed(2), z: +pose.z.toFixed(2),
+            progress: +(api2.tracks[pose.phase] ? pose.d / api2.tracks[pose.phase].len : Math.min(1, pose.t / 1.4)).toFixed(3), afloat: pose.afloat, visible: man.visible } : null,
+          canoe: boat ? { x: +boat.mesh.position.x.toFixed(2), y: +boat.mesh.position.y.toFixed(2), z: +boat.mesh.position.z.toFixed(2), busy: !!boat.busy } : null,
         };
       },
       /** Jump the wheat to a phase (one number for all beds, offset by a quarter each, or four numbers). */
@@ -1356,6 +1860,10 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
         return api.state().beds;
       },
       setMoisture(m) { moisture = clamp(+m || 0, 0, 1); },
+      /** Jump the villager to a phase (home, walkOut, board, toLanding, disembark, lift, portage, launch, embark, river, lagoon, toMooring, reMoor, unboard, walkHome) and progress 0..1. */
+      setVillager(phase, progress = 0) { return man ? api2.set(phase, progress) : false; },
+      /** Samples the whole route and returns the worst values (clearances in world units, ok = all within limits). */
+      check() { return man ? api2.check() : null; },
     };
 
     return { name: 'farm', group, api, update };
@@ -6142,7 +6650,7 @@ void main(){
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
-}`}),r=new ni(e,s,i);r.frustumCulled=!1,r.renderOrder=5;let o=[];for(let d=0;d<i;d++){let x=t()*Math.PI*2,y=Math.sqrt(t())*104;o.push({x:Math.cos(x)*y,z:Math.sin(x)*y,y:33+t()*10,s:.75+t()*.75,rot:t()*Math.PI*2,thr:d/i,k:0,vy:t()})}let a=new ge,l=new qe,c=new z,h=new z,f=new z(0,1,0);function u(d,x,y,g,m){for(let v=0;v<i;v++){let w=o[v];w.x+=y.x*d,w.z+=y.y*d;let E=Math.hypot(w.x,w.z);E>118&&(w.x=-w.x*.98,w.z=-w.z*.98,w.k=0);let R=w.thr<x?1:0;w.k+=(R-w.k)*Math.min(1,d*.5);let A=1-Math.max(0,(E-106)/12),p=w.s*Math.sqrt(w.k)*Math.max(0,A)*(1+m);w.k<.04&&(p=0),l.setFromAxisAngle(f,w.rot),c.set(p*1.25,p*(.85+.3*w.vy)*(1-g*.25),p),h.set(w.x,w.y-g*8,w.z),a.compose(h,l,c),r.setMatrixAt(v,a)}r.instanceMatrix.needsUpdate=!0}return{mesh:r,uniforms:n,update:u}}var no=new Ct;function at(i,t,e=0,n=Math.random){let s=i.index?i.toNonIndexed():i;s.deleteAttribute("uv"),s.attributes.uv1&&s.deleteAttribute("uv1");let r=s.attributes.position.count,o=new Float32Array(r*3),a=new Ct(t);for(let l=0;l<r;l+=3){no.copy(a),e&&no.offsetHSL((n()-.5)*e*.1,0,(n()-.5)*e);for(let c=0;c<3&&l+c<r;c++)o[(l+c)*3]=no.r,o[(l+c)*3+1]=no.g,o[(l+c)*3+2]=no.b}return s.setAttribute("color",new Qe(o,3)),s.attributes.normal||s.computeVertexNormals(),s}function Ue(i){let t=rl(i,!1);return t.computeVertexNormals(),t}function af(i,t,e,n){let s=[],r=[],o=[],a=new z(0,1,0);for(let c=0;c<i.length;c++){let h=i[c],f=new z().subVectors(i[Math.min(c+1,i.length-1)],i[Math.max(c-1,0)]).normalize(),u=new z().crossVectors(f,a);u.lengthSq()<1e-4&&u.set(1,0,0),u.normalize();let d=new z().crossVectors(u,f).normalize(),x=[];for(let y=0;y<e;y++){let g=y/e*Math.PI*2;x.push(h.clone().addScaledVector(u,Math.cos(g)*t[c]).addScaledVector(d,Math.sin(g)*t[c]))}o.push(x)}for(let c=0;c<o.length-1;c++){let h=new Ct(n[c%n.length]);for(let f=0;f<e;f++){let u=o[c][f],d=o[c][(f+1)%e],x=o[c+1][f],y=o[c+1][(f+1)%e];s.push(u.x,u.y,u.z,x.x,x.y,x.z,d.x,d.y,d.z,d.x,d.y,d.z,x.x,x.y,x.z,y.x,y.y,y.z);for(let g=0;g<6;g++)r.push(h.r,h.g,h.b)}}let l=new oe;return l.setAttribute("position",new Lt(s,3)),l.setAttribute("color",new Lt(r,3)),l.computeVertexNormals(),l}function lf(i,t,e,n,s=6){let r=[],o=[],a=new Ct(n),l=new Ct(n).multiplyScalar(.78),c=[];for(let f=0;f<=s;f++){let u=f/s,d=u*i,x=Math.sin(u*Math.PI*.55)*i*.28-e*u*u*i,y=Math.sin(Math.min(1,u*1.15)*Math.PI)*t*(u<.08?.3:1);c.push([d,x,y])}for(let f=0;f<s;f++){let[u,d,x]=c[f],[y,g,m]=c[f+1],v=.25;r.push(u,d,0,y,g,0,y,g-m*v,-m,u,d,0,y,g-m*v,-m,u,d-x*v,-x),r.push(u,d,0,u,d-x*v,x,y,g-m*v,m,u,d,0,y,g-m*v,m,y,g,0);for(let w=0;w<6;w++)o.push(a.r,a.g,a.b);for(let w=0;w<6;w++)o.push(l.r,l.g,l.b)}let h=new oe;return h.setAttribute("position",new Lt(r,3)),h.setAttribute("color",new Lt(o,3)),h.computeVertexNormals(),h}function or(i,t,e){let n=i.attributes.position,s=new Map;for(let r=0;r<n.count;r++){let o=`${n.getX(r).toFixed(3)},${n.getY(r).toFixed(3)},${n.getZ(r).toFixed(3)}`,a=s.get(o);a||(a=[(e()-.5)*t,(e()-.5)*t,(e()-.5)*t],s.set(o,a)),n.setXYZ(r,n.getX(r)+a[0],n.getY(r)+a[1],n.getZ(r)+a[2])}return i.computeVertexNormals(),i}var ve=Ze(4242);function zx(){let i=[],t=[];for(let l=0;l<=7;l++){let c=l/7;i.push(new z(1.1*c*c,4.6*c,0)),t.push(.2-.07*c)}let r=[af(i,t,5,[9071176,10452824])],o=i[i.length-1],a=8;for(let l=0;l<a;l++){let c=lf(2.6+ve()*.6,.42,.55+ve()*.4,l%2?5220410:4101171);c.rotateZ(.15+ve()*.25),c.rotateY(l/a*Math.PI*2+ve()*.3),c.translate(o.x,o.y,o.z),r.push(c)}for(let l=0;l<3;l++){let c=at(new si(.17,0),7031338),h=l/3*Math.PI*2;c.translate(o.x+Math.cos(h)*.18,o.y-.18,o.z+Math.sin(h)*.18),r.push(c)}return Ue(r)}function Hx(){let i=[at(new ee(.12,.2,1.8,5,1,!0).translate(0,.9,0),8018492)],t=[[0,2.4,0,1.25],[.7,2,.3,.85],[-.6,2.1,-.3,.9],[.1,3,-.2,.8]];for(let[e,n,s,r]of t){let o=at(new Re(r,0),5216828,.12,ve);o.translate(e,n,s),i.push(o)}i[1]=or(at(new ls(1.3,0),5216828,.12,otiR),.14,otiR).translate(0,2.4,0);for(let k=2;k<5;k++)or(i[k],.14,otiR);for(let[z0,y0]of[[-.9,-.405],[.88,-.405]])i.push(at(new ee(.035,.075,.8,3,1,!0).translate(0,.4,0).rotateZ(z0).rotateY(y0).translate(0,1.3,0),8018492));return Ue(i)}function Gx(){let i=[at(new ee(.1,.16,1,5,1,!0).translate(0,.5,0),7031346)],t=[[.8,1.5,1.9],[1.6,1.25,1.6],[2.4,.95,1.4],[3.1,.6,1.1]];for(let[e,n,s]of t){let r=at(new Se(n,s,7),3109956,.1,ve);r.translate(0,e+s/2,0),i.push(r)}i.length=1;for(let[e,n,s]of[[.7,1.55,1.6],[1.35,1.32,1.45],[2,1.08,1.3],[2.62,.82,1.15],[3.2,.55,1]]){let r=at(new Se(n,s,8),3109956,.1,otiR),p=r.attributes.position;for(let k=0;k<p.count;k++){let x=p.getX(k),y=p.getY(k),z=p.getZ(k);y<0&&Math.hypot(x,z)>.01&&Math.round(Math.atan2(z,x)/.7854+8)%2&&p.setXYZ(k,x*.74,y+.07*s,z*.74)}r.computeVertexNormals(),r.translate(0,e+s/2,0),i.push(r)}return Ue(i)}function kx(){let i=[],t=[[0,.35,0,.55],[.45,.25,.1,.4],[-.35,.3,-.2,.42]];for(let[e,n,s,r]of t){let o=at(new Re(r,0),4164151,.15,ve);o.translate(e,n,s),i.push(o)}return Ue(i)}function Vx(){let i=new ls(.8,0),t=at(i,10129544,.12,ve);t.scale(1.2,.7,1),or(t,.25,ve);let g=t,p=g.attributes.position,c=g.attributes.color,m=new Ct(7309898),q=new Ct,A=new z,B=new z;for(let k=0;k<p.count;k++)p.getY(k)<-.34&&p.setY(k,-.34);for(let k=0;k<p.count;k+=3){A.set(p.getX(k+1)-p.getX(k),p.getY(k+1)-p.getY(k),p.getZ(k+1)-p.getZ(k)),B.set(p.getX(k+2)-p.getX(k),p.getY(k+2)-p.getY(k),p.getZ(k+2)-p.getZ(k)),A.cross(B).normalize();let w=ce((A.y-.6)/.3,0,1)*.45;for(let j=k;j<k+3;j++)q.setRGB(c.getX(j),c.getY(j),c.getZ(j)).lerp(m,w),c.setXYZ(j,q.r,q.g,q.b)}return g.computeVertexNormals(),g}function Wx(){let i=at(new ee(.02,.02,.35,3,1,!0).translate(0,.17,0),4028970),t=at(new si(.13,0).translate(0,.38,0),16777215),e=at(new Se(.09,.2,3).rotateZ(1).translate(.08,.12,0),4028970);return Ue([i,t,e])}function otiXx(){let R=Ze(977),i=[];for(let t=0;t<5;t++){let e=new oe,n=t/5*Math.PI*2+R()*.9,s=.05,r=.38+R()*.34,o=Math.cos(n),a=Math.sin(n),l=.1+R()*.12,cx=a*.05,cz=-o*.05,m=.55,ax=cx-s*o,az=cz-s*a,bx=cx+s*o,bz=cz+s*a,dx=cx+s*.7*o+l*.3*a,dz=cz+s*.7*a-l*.3*o,ex=cx-s*.7*o+l*.3*a,ez=cz-s*.7*a-l*.3*o;e.setAttribute("position",new Lt([ax,0,az,bx,0,bz,dx,r*m,dz,ax,0,az,dx,r*m,dz,ex,r*m,ez,ex,r*m,ez,dx,r*m,dz,cx+l*a,r,cz-l*o],3)),i.push(at(e,t%2?8175690:6202682))}return Ue(i)}function Xx(){let i=[];for(let t=0;t<4;t++){let e=new oe,n=t/4*Math.PI+ve()*.5,s=.07,r=.45+ve()*.3,o=Math.cos(n),a=Math.sin(n),l=.15;e.setAttribute("position",new Lt([-s*o,0,-s*a,s*o,0,s*a,l*a,r,-l*o],3)),i.push(at(e,t%2?8175690:6202682))}return Ue(i)}function qx(i){let t=[];if(i===0)for(let e=0;e<6;e++){let n=.5+ve()*.6,s=at(new ee(.04,.08,n,4,1,!0),16777215);s.translate(0,n/2,0),s.rotateZ((ve()-.5)*1.1),s.rotateY(ve()*6.28),t.push(s);let r=at(new si(.1,0),16777215),o=new z(0,n,0);r.translate(0,n,0),r.rotateZ(0),t.push(r)}else if(i===1){let e=at(new Re(.55,1),16777215,.15,ve);e.scale(1,.6,1),t.push(or(e,.1,ve))}else{let e=at(new ee(.7,.15,.18,7),16777215,.1,ve);e.translate(0,.45,0),t.push(e),t.push(at(new ee(.08,.12,.45,4).translate(0,.22,0),16777215))}return Ue(t)}var otiR=Ze(4243);function otiVG(g){g.computeBoundingBox();let b=g.boundingBox,p=g.attributes.position,c=g.attributes.color,n=g.attributes.normal,h=Math.max(b.max.y-b.min.y,.001),R=Math.max(b.max.x-b.min.x,b.max.z-b.min.z)/2||1;for(let k=0;k<p.count;k++){let t=(p.getY(k)-b.min.y)/h,r=Math.min(Math.hypot(p.getX(k),p.getZ(k))/R,1),f=(.74+.2*t+.16*r)*(n&&n.getY(k)<-.25?.86:1);c.setXYZ(k,c.getX(k)*f,c.getY(k)*f,c.getZ(k)*f)}c.needsUpdate=!0}function ji(i,t,e,n){otiVG(i);let s=Ri(new Ye(Object.assign({vertexColors:!0},e)),Object.assign({detail:n.caustics?0:n.sway?"veg":"rock"},n)),r=new ni(i,s,t);return r.castShadow=!0,r.receiveShadow=!0,r}function Qi(i,t,e,n,s){let r=[];for(let o=0;o<t&&r.length<i;o++){let a=-66+ve()*132,l=-46+ve()*102,c=te(a,l);if(!e(a,l,c))continue;let h=!0;for(let f of s)if((f[0]-a)**2+(f[1]-l)**2<(f[2]+n)**2){h=!1;break}h&&(r.push([a,c,l]),s.push([a,l,n*.5]))}return r}function cf(i,t,e){let n=new Le,s=i.map(N=>[N[0],N[1],N[2]]),r=(N,b,O)=>t.some(X=>(X[0]-N)**2+(X[2]-b)**2<O*O),o=(N,b)=>{let[O,X]=Ji(N,b);return O<2.6&&X<.999},a=(N,b,O=.8)=>!o(N,b)&&Ki(N,b)>O&&!sr(N,b,2.5),l=(N,b,O)=>_s(N*.045+7,b*.045-2)*.8+(b<4?.35:-.1)+(O>4?.2:0),c=e==="low"?.65:1,h=new ge,f=new qe,u=new Sn,d=new z,x=new z,y=new Ct,g=(N,b,O,X,H=.08,j=0,V=null)=>(b.forEach((tt,ht)=>{let W=O+ve()*(X-O);u.set((ve()-.5)*H,ve()*Math.PI*2,(ve()-.5)*H),f.setFromEuler(u),d.set(W,W*(.85+ve()*.3),W),x.set(tt[0],tt[1]+j,tt[2]),h.compose(x,f,d),N.setMatrixAt(ht,h),V&&(V(y,ht,tt),N.setColorAt(ht,y))}),N.count=b.length,N.instanceMatrix.needsUpdate=!0,N.instanceColor&&(N.instanceColor.needsUpdate=!0),n.add(N),N),m=(N,b=0)=>O=>{let X=1+(ve()-.5)*N;O.setRGB(X*(1+b*(ve()-.3)),X*(1+(ve()-.5)*N*.5),X*(1-b*ve()*.5))},v=Qi(Math.round(170*c),24e3,(N,b,O)=>O>.45&&O<2.4&&On(N,b)<.5&&a(N,b,1)&&vs(N,b)>12,1.8,s);g(ji(zx(),v.length,{side:Ee},{sway:.03}),v,.75,1.15,.12,-.1,m(.25,.15));let w=Qi(Math.round(480*c),7e4,(N,b,O)=>O<2||O>13||On(N,b)>1||!a(N,b,1.1)||r(N,b,3.2)?!1:l(N,b,O)>-.3||ve()<.15,1.1,s);g(ji(Hx(),w.length,{},{sway:.012}),w,.65,1.15,.1,-.15,m(.4,.5));let E=Qi(Math.round(190*c),26e3,(N,b,O)=>(O>5.5&&O<16.5&&vs(N,b)<18||O>4.5&&l(N,b,O)>.25||Math.hypot(N-wi.x,b-wi.z)<8)&&O>2&&On(N,b)<1.7&&!r(N,b,3)&&vs(N,b)>7.5&&a(N,b),1.2,s);g(ji(Gx(),E.length,{},{sway:.008}),E,.6,1.1,.06,-.1,m(.35,.1));let R=Qi(Math.round(360*c),24e3,(N,b,O)=>O>1.4&&O<14&&!r(N,b,2.5)&&a(N,b,.7),.9,s);g(ji(kx(),R.length,{},{sway:.06}),R,.6,1.3,.2,-.05,m(.4,.4));let A=Qi(Math.round(950*c),24e3,(N,b,O)=>O>1.3&&O<11&&On(N,b)<.9&&!r(N,b,2.5)&&a(N,b,.6),.25,s.slice(0,i.length)),otiGX=(()=>{let L=[];if(e==="low")return L;let R=Ze(4711),G=.62;for(let gz=-58;gz<64;gz+=G)for(let gx=-66;gx<66;gx+=G){let N=gx+R()*G,b=gz+R()*G,q=R();if(Math.hypot(N,b)>64)continue;let O=te(N,b);O>1.3&&O<11&&q<(.3+.7*Nt(-.15,.25,_s(N*.21+9,b*.21)))*.93&&On(N,b)<.9&&!r(N,b,2.5)&&a(N,b,.6)&&L.push([N,O,b])}return L})(),p=ji(e==="low"?Xx():(Xx(),otiXx()),A.length+otiGX.length,{side:Ee},{sway:.5});p.castShadow=!1,g(p,A,.8,1.6,.3,-.03,m(.3,.4));if(otiGX.length){let R=Ze(4712);otiGX.forEach((q,k)=>{let W=.7+R()*.8;u.set((R()-.5)*.3,R()*Math.PI*2,(R()-.5)*.3),f.setFromEuler(u),d.set(W,W*(.8+R()*.5),W),x.set(q[0],q[1]-.03,q[2]),h.compose(x,f,d),p.setMatrixAt(A.length+k,h);let K=(1.12-.42*Nt(4,7.5,q[1]))*(.85+R()*.3);y.setRGB(K*(1+.25*(R()-.3)),K,K*(1-.2*R())),p.setColorAt(A.length+k,y)}),p.count=A.length+otiGX.length,p.instanceMatrix.needsUpdate=!0,p.instanceColor&&(p.instanceColor.needsUpdate=!0)}let S=[16739211,16765503,16777215,16728128,11893759,16752448],D=Qi(Math.round(700*c),34e3,(N,b,O)=>O>1.6&&O<8&&On(N,b)<.7&&(_s(N*.07+3,b*.07)>.15||Qr(N*.12,b*.12)>.35)&&a(N,b,.6),.2,s.slice(0,i.length)),P=ji(Wx(),D.length,{},{sway:1.2});P.castShadow=!1,g(P,D,.8,1.4,.3,0,(N,b)=>N.set(S[Math.floor(ve()*S.length)]));let C=Qi(Math.round(230*c),26e3,(N,b,O)=>{if(!a(N,b,.8))return!1;let X=On(N,b);return vs(N,b)<he.rimR+.8?!1:O>-3&&O<.6&&ve()<.35||X>.55&&O>1||O>14&&ve()<.5},1.2,s.slice(0,i.length));g(ji(Vx(),C.length,{},{}),C,.5,1.6,.6,-.15,(N,b,O)=>{let X=O[1]>14?.55+ve()*.15:.9+ve()*.25;N.setRGB(X,X*.97,X*.93)});let U=[16740241,16750193,16762719,12882687,16382065,7329279,16732014];for(let N=0;N<3;N++){let b=Qi(Math.round(90*c),1e4,(X,H,j)=>j<-.45&&j>-3.2&&ir(X,H)<$t.ringC+3.5,.8,[]),O=ji(qx(N),b.length,{},{snow:0,wet:0,caustics:!0});O.castShadow=!1,g(O,b,.6,1.4,.3,-.1,X=>X.set(U[Math.floor(ve()*U.length)]))}return{group:n,palms:v}}var ke=Ze(777),hf=new ge;function qt(i,t,e,n,s=0,r=1){return hf.compose(new z(t,e,n),new qe().setFromEuler(new Sn(0,s,0)),new z(r,r,r)),i.applyMatrix4(hf),i}function ol(i,t,e,n,s,hO){if(window.__islandBoatHull)return window.__islandBoatHull({BufferGeometry:oe,Float32BufferAttribute:Lt,Color:Ct},i,t,e,n,s,hO);let r=new Kt(i,e,t,4,1,1),o=r.attributes.position;for(let c=0;c<o.count;c++){let h=o.getX(c),f=o.getY(c),u=o.getZ(c),d=h/(i/2);d>.2&&(u*=Math.max(.05,1-(d-.2)*1.15)),d<-.7&&(u*=.85),f<0&&(u*=.55,h*=.92),f>0&&d>.6&&(f+=.12*e),o.setXYZ(c,h,f,u)}let a=at(r,n),l=at(new Kt(i*.9,.06,t*.98).translate(-i*.04,e/2,0),s);return Ue([a,l])}function al(i,t,e,n,s,r){let o=[];for(let a=0;a<4e3&&o.length<n;a++){let l=ke()*Math.PI*2,c=Math.sqrt(ke())*e,h=i+Math.cos(l)*c,f=t+Math.sin(l)*c,u=te(h,f);r(h,f,u)&&(o.some(d=>Math.hypot(d[0]-h,d[2]-f)<s)||o.push([h,u,f]))}return o}function uf(){let i=new Le,t=[],e=[],n=[],s=[],r=null;for(let J=2;J<3.3;J+=.03){let L=2;for(;L<18&&!(te($t.x+Math.cos(J)*L,$t.z+Math.sin(J)*L)>.55);L+=.2);let pt=$t.x+Math.cos(J)*L,yt=$t.z+Math.sin(J)*L,ct=On(pt+Math.cos(J)*1.5,yt+Math.sin(J)*1.5)+Math.abs(J-2.62)*.6;L<17.5&&(!r||ct<r.score)&&(r={a:J,r:L,score:ct,sx:pt,sz:yt})}let o=r.a+Math.PI,a=Math.cos(o),l=Math.sin(o),c={x:r.sx-a*1.5,z:r.sz-l*1.5},h=9.5,f=.95,u=-Math.atan2(l,a);for(let J=0;J<h/.42;J++){let L=J*.42,pt=c.x+a*L,yt=c.z+l*L,Pt=at(new Kt(.34,.1,1.5),J%3?11568473:10516048);if(t.push(qt(Pt,pt,f+(ke()-.5)*.03,yt,u)),J%4===0)for(let ct of[-.7,.7]){let Dt=pt+-l*ct,bt=yt+a*ct,Et=at(new ee(.08,.09,f+2.8,5),7229496);t.push(qt(Et,Dt,(f-2.8)/2+.15,bt))}}let d={x:c.x+a*h,z:c.z+l*h},x=[];for(let J of[-1,1]){let L=d.x+-l*J*3.2,pt=d.z+a*J*3.2;x.push([L,pt]);for(let ct=0;ct<6;ct++){let Dt=ct/6*2.4*J,bt=d.x+-l*Dt,Et=d.z+a*Dt;t.push(qt(at(new Kt(1.2,.1,.38),11568473),bt,f,Et,u))}t.push(qt(at(new Kt(2.8,.14,2.8),10779218),L,f+.05,pt,u));for(let[ct,Dt]of[[-1.2,-1.2],[1.2,-1.2],[-1.2,1.2],[1.2,1.2]])t.push(qt(at(new ee(.09,.1,3.6,5),7229496),L+ct,f-1.75,pt+Dt));t.push(qt(at(new Kt(2.1,1.25,2),15325368),L,f+.75,pt,u));let yt=at(new Se(2.25,1.5,4,1),13214298,.1,ke);t.push(qt(yt.rotateY(Math.PI/4),L,f+2.1,pt,u));let Pt=at(new Hi(.5,.45),16777215);e.push(qt(Pt.rotateY(-Math.PI/2*J+Math.PI/2),L+-l*J*1.06,f+.8,pt+a*J*1.06,u+(J>0?0:Math.PI)+Math.PI/2)),n.push([L+-l*J*1.15,f+.8,pt+a*J*1.15,1,.75,.4,2.2,0])}for(let J of[2.5,6.5])for(let L of[-.75,.75]){let pt=c.x+a*J+-l*L,yt=c.z+l*J+a*L;t.push(qt(at(new ee(.04,.04,1,4),4864556),pt,f+.5,yt));let Pt=at(new Kt(.16,.2,.16),16777215);e.push(qt(Pt,pt,f+1.05,yt)),n.push([pt,f+1.08,yt,1,.7,.35,1.6,0])}s.push([c.x,c.z,2.5]);let y={x:je.x,z:je.z},g=[],m={x:y.x-2.1,z:y.z-1.3},v=al(y.x,y.z,13.5,11,4.3,(J,L,pt)=>pt>1.2&&pt<5&&On(J,L)<.35&&Ji(J,L)[0]>3.5&&ir(J,L)>$t.rIn+1&&Ki(J,L)>1.5&&!sr(J,L,2)&&Math.hypot(J-y.x,L-y.z)>3.4);{let J=te(y.x,y.z);t.push(qt(at(new ee(.6,.65,.7,10,1,!0),10130572,.15,ke),y.x,J+.35,y.z)),t.push(qt(at(new ii(.58,10).rotateX(-Math.PI/2),2051960),y.x,J+.45,y.z));for(let L of[-1,1])t.push(qt(at(new ee(.05,.05,1.3,4),7229496),y.x+L*.55,J+1,y.z));t.push(qt(at(new Se(.9,.55,4).rotateY(Math.PI/4),11765311),y.x,J+1.85,y.z)),s.push([y.x,y.z,3.2]),s.push([m.x,m.z,2.2])}let w=null,E=[];{for(let q=0;q<288;q++)ke();let otiR=Ze(4271),M=-Oe.rot;let hc=[[Oe.a+2.2,-1.4],[Oe.a+1.9,.6],[-Oe.a-1.9,.6]].map(p=>otiTW(...p)),[Dt,bt]=hc.find(([x,z])=>v.every(h=>Math.hypot(h[0]-x,h[2]-z)>3.4))||hc[0],Et=te(Dt,bt)-.05,hh=1.45;w={x:Dt,z:bt,y:Et,rot:M,e:1.02,h:hh};for(let[a,b]of[[-1,-1],[1,-1],[1,1],[-1,1]])t.push(qt(at(new ee(.06,.07,hh+.4,4,1,!0),7229496),Dt+(a*Math.cos(M)+b*Math.sin(M))*.8,Et+hh/2-.2,bt+(-a*Math.sin(M)+b*Math.cos(M))*.8,M));t.push(qt(at(new Kt(1.75,.1,1.75),10779218),Dt,Et+.42,bt,M));let _=at(new Se(1.45,.85,4,1),13214298,.1,otiR);_.rotateY(Math.PI/4),t.push(qt(_,Dt,Et+hh+.42,bt,M)),s.push([Dt,bt,2.4]);{let[B,k]=otiTW(-4.75,.15),Y=te(B,k),r=M+.3;t.push(qt(at(new ee(.04,.04,1.8,4),7229496),B,Y+.9,k)),t.push(qt(at(new Kt(1.2,.06,.06),7229496),B,Y+1.35,k,r)),t.push(qt(at(new Kt(.4,.55,.25),4157358),B,Y+1.2,k,r)),t.push(qt(at(new Re(.17,0),14729328),B,Y+1.7,k)),t.push(qt(at(new Se(.38,.2,6),13214298),B,Y+1.9,k))}{let q=window.__islandFarm;if(q&&q.build)try{for(let g of q.build({BoxGeometry:Kt,CylinderGeometry:ee,ConeGeometry:Se,BufferGeometry:oe,Float32BufferAttribute:Lt,Color:Ct,tint:at,place:qt,rng:otiR,terrainHeight:te,field:{x:Oe.x,z:Oe.z,a:Oe.a,b:Oe.b,rot:Oe.rot,h:Oe.h,toWorld:otiTW,rim:otiTQ},hut:w}))t.push(g)}catch(g){console.warn("Island farm failed to build:",g)}}}for(let J of to)for(let L=0;L<J.length-1;L++){let[pt,yt]=J[L],[Pt,ct]=J[L+1],Dt=-1,bt=1e9;for(let vt=0;vt<=60;vt++){let Gt=vt/60,ft=Ji(pt+(Pt-pt)*Gt,yt+(ct-yt)*Gt)[0];ft<bt&&(bt=ft,Dt=Gt)}if(bt>.4)continue;let Et=pt+(Pt-pt)*Dt,M=yt+(ct-yt)*Dt,[,_,B]=Ji(Et,M);if(_>.97||E.some(vt=>Math.hypot(vt.x-Et,vt.z-M)<4))continue;let k=Math.atan2(ct-yt,Pt-pt),Y=-k,it=Math.cos(k),ut=Math.sin(k),q=2.5,$=te(Et-it*q,M-ut*q)+.04,gt=te(Et+it*q,M+ut*q)+.04,F=(gt-$)/(q*2),rt=Math.atan(F),et=Math.max(($+gt)/2,eo(_,B)+.35),_t=et-($+gt)/2,xt=vt=>($+gt)/2+F*vt+(.3+_t)*(1-(vt/q)**2),mt=et;for(let vt=-7;vt<=7;vt++){let Gt=vt*(q/7.2),ft=F-2*(.3+_t)*Gt/(q*q),zt=at(new Kt(.36,.09,1.3),vt%2?10779218:11568473);zt.rotateZ(Math.atan(ft)),t.push(qt(zt,Et+it*Gt,xt(Gt),M+ut*Gt,Y))}for(let vt of[-.62,.62]){let Gt=[-7,-2.4,2.4,7].map(ft=>ft*(q/7.2));for(let ft of Gt)t.push(qt(at(new ee(.04,.04,.66,4),7229496),Et+it*ft-ut*vt,xt(ft)+.33,M+ut*ft+it*vt));for(let ft=0;ft<Gt.length-1;ft++){let zt=Gt[ft],jt=Gt[ft+1],Tt=xt(zt)+.64,se=xt(jt)+.64,Pe=(zt+jt)/2,Tn=at(new Kt(Math.hypot(jt-zt,se-Tt)+.06,.06,.06),9071176);Tn.rotateZ(Math.atan2(se-Tt,jt-zt)),t.push(qt(Tn,Et+it*Pe-ut*vt,(Tt+se)/2,M+ut*Pe+it*vt,Y))}}s.push([Et,M,2.5]),E.push({x:Et,z:M,deck:mt,dir:k,slope:F,half:q,hA:$,hB:gt})}let R=[];v.forEach(([J,L,pt],yt)=>{let Pt=L-.15,ct=Math.atan2(c.z-pt,c.x-J),Dt=-ct+Math.PI/2;s.push([J,pt,2.6]);let bt=yt%2===0,Et=[15193005,14268814,15786692,13608826][yt%4],M=[12950095,11765311,13740898][yt%3];if(bt)t.push(qt(at(new ee(1.15,1.25,1.5,8),Et),J,Pt+.75,pt)),t.push(qt(at(new Se(1.75,1.7,8,2),M,.12,ke),J,Pt+2.3,pt,ke())),t.push(qt(at(new Se(.2,.5,5),9071162),J,Pt+3.3,pt));else{t.push(qt(at(new Kt(2.1,1.5,1.8),Et),J,Pt+.75,pt,Dt));let Y=at(new ee(.01,1.7,1.4,4,1),M,.12,ke);Y.scale(1.25,1,1),Y.rotateY(Math.PI/4),t.push(qt(Y,J,Pt+2.2,pt,Dt)),t.push(qt(at(new Kt(.3,.9,.3),9208696),J+Math.cos(ct+1.6)*.6,Pt+2.6,pt+Math.sin(ct+1.6)*.6)),g.push([J+Math.cos(ct+1.6)*.6,Pt+3.1,pt+Math.sin(ct+1.6)*.6])}let _=bt?1.2:.93,B=J+Math.cos(ct)*_,k=pt+Math.sin(ct)*_;t.push(qt(at(new Kt(.12,.9,.55),5913894),B,Pt+.45,k,-ct));for(let Y of[1.2,-1.2]){let it=ct+Y,ut=bt?1.19:.95,q=J+Math.cos(it)*ut,$=pt+Math.sin(it)*ut;e.push(qt(at(new Kt(.1,.38,.38),16777215),q,Pt+.95,$,-it)),n.push([q+Math.cos(it)*.15,Pt+.95,$+Math.sin(it)*.15,1,.72,.38,2,0])}R.push({x:J,y:Pt,z:pt,face:ct,round:bt,rot:Dt,door:[B,k]})});let A=al((y.x+r.sx)/2,(y.z+r.sz)/2,6,1,0,(J,L,pt)=>pt>.7&&pt<3&&On(J,L)<.3&&Ki(J,L)>1.2&&!R.some(yt=>Math.hypot(yt.x-J,yt.z-L)<3.5))[0]||[r.sx-a*3,1,r.sz-l*3],[p,S,D]=A;s.push([p,D,2.5]);for(let J=0;J<8;J++){let L=J/8*Math.PI*2;t.push(or(qt(at(new Re(.16,0),9407108),p+Math.cos(L)*.55,S+.05,D+Math.sin(L)*.55),.06,ke))}for(let J=0;J<3;J++){let L=at(new ee(.07,.07,.8,5),6111271);L.rotateZ(1.2),L.rotateY(J*2.1),t.push(qt(L,p,S+.2,D))}for(let J of[.6,2.4,4.3]){let L=at(new ee(.17,.17,1.3,6),8082996);L.rotateZ(Math.PI/2),L.rotateY(-J+Math.PI/2),t.push(qt(L,p+Math.cos(J)*1.5,S+.12,D+Math.sin(J)*1.5))}let P=new un({color:16747050,transparent:!0,opacity:.95,fog:!0}),C=new Le,U=new Wt(new Se(.28,.85,6).translate(0,.42,0),P),N=new Wt(new Se(.16,.55,5).translate(0,.28,0),new un({color:16769126,fog:!0}));C.add(U,N),C.position.set(p,S+.1,D),i.add(C),n.push([p,S+.5,D,1,.55,.2,3.2,2]);let b=new cs(16747066,0,14,1.6);b.position.set(p,S+1,D),i.add(b);let O=al(r.sx-a*1.5,r.sz-l*1.5,9,4,3.2,(J,L,pt)=>pt>.45&&pt<1.1&&On(J,L)<.25&&Math.hypot(J-p,L-D)>3&&Math.hypot(J-c.x,L-c.z)>2.5&&!R.some(yt=>Math.hypot(yt.x-J,yt.z-L)<3));if(O[0]){let[J,L,pt]=O[0];t.push(qt(at(new ee(.04,.04,2.1,4),15658734),J,L+1,pt));let yt=new Se(1.3,.55,8,1,!0).toNonIndexed(),Pt=[];for(let ct=0;ct<yt.attributes.position.count/3;ct++){let Dt=new Ct(ct%2?16777215:15222076);for(let bt=0;bt<3;bt++)Pt.push(Dt.r,Dt.g,Dt.b)}yt.deleteAttribute("uv"),yt.setAttribute("color",new Lt(Pt,3)),t.push(qt(yt,J,L+2,pt)),t.push(qt(at(new Kt(1.6,.03,.8),3909592),J+1,L+.03,pt+.4,.4)),s.push([J,pt,1.8])}if(O[1]){let[J,L,pt]=O[1],yt=ol(2.6,.7,.4,10506797,7027231);yt.rotateZ(.08),t.push(qt(yt,J,L+.15,pt,ke()*3)),s.push([J,pt,1.8])}if(O[2]){let[J,L,pt]=O[2];t.push(qt(at(new ee(.55,.65,.4,8),15126424),J,L+.15,pt));for(let yt=0;yt<4;yt++){let Pt=yt/4*Math.PI*2;t.push(qt(at(new ee(.14,.16,.5,6),15126424),J+Math.cos(Pt)*.45,L+.5,pt+Math.sin(Pt)*.45))}t.push(qt(at(new Se(.22,.5,6),15126424),J,L+.6,pt)),t.push(qt(at(new Hi(.2,.14).translate(.1,0,0),15222076),J,L+1,pt)),t.push(qt(at(new ee(.01,.01,.4,3),5592405),J,L+.9,pt))}let X=te(xs.x,xs.z),H=xs.x,j=xs.z,V=X-.2,tt=6.6;for(let J=0;J<6;J++){let L=J/6,pt=(J+1)/6,yt=xe(.95,.62,L),Pt=xe(.95,.62,pt);t.push(qt(at(new ee(Pt,yt,tt/6,10),J%2?14170415:16184042),H,V+(L+pt)/2*tt,j))}t.push(qt(at(new ee(1.25,1.35,.5,10),14275528),H,V+.1,j)),t.push(qt(at(new ee(.95,.85,.16,10),3159098),H,V+tt+.08,j)),t.push(qt(at(new ee(.06,.06,1,10,1,!0),3159098),H+0,V+tt+.6,j)),t.push(qt(at(new Se(.75,.75,10),13120042),H,V+tt+1.55,j)),t.push(qt(at(new Jn(.12,6,4),3159098),H,V+tt+2,j));let ht=at(new Kt(1.4,1,1.1),16184042);t.push(qt(ht,H-1.5,V+.5,j-.6,.3)),t.push(qt(at(new Se(1.15,.7,4),13120042).rotateY(Math.PI/4),H-1.5,V+1.35,j-.6,.3));let W=new un({color:16773552,fog:!0}),lt=new Wt(new ee(.42,.42,.7,10),W);lt.position.set(H,V+tt+.55,j),i.add(lt),n.push([H,V+tt+.55,j,1,.92,.6,5,3]),s.push([H,j,3]);let I=new Se(2.6,34,16,1,!0);I.translate(0,-17,0),I.rotateZ(Math.PI/2);let Z=new fe({transparent:!0,depthWrite:!1,blending:En,side:Ee,uniforms:{uI:{value:0}},vertexShader:"varying float vT; varying vec3 vN; varying vec3 vV; void main(){ vT = clamp(position.x / 34.0, 0.0, 1.0); vec4 mv = modelViewMatrix*vec4(position,1.0); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }",fragmentShader:"uniform float uI; varying float vT; varying vec3 vN; varying vec3 vV; void main(){ float edge = pow(abs(dot(normalize(vN), normalize(vV))), 1.5); float a = pow(1.0 - vT, 2.2) * edge * uI; gl_FragColor = vec4(vec3(1.0, 0.93, 0.7) * a, 1.0); }"}),nt=new Le,dt=new Wt(rl([I,I.clone().rotateY(Math.PI)],!1),Z);nt.add(dt),nt.position.set(H,V+tt+.55,j),nt.renderOrder=8,i.add(nt);let St=Ri(new Ye({vertexColors:!0,side:Ee}),{snow:1,wet:1,detail:"grain"}),Ut=new Le;{let J=[ol(2.8,1.1,.7,2977704,15921126)];J.push(at(new Kt(.9,.7,.8).translate(-.4,.65,0),15921126)),J.push(at(new Kt(1,.1,.9).translate(-.4,1.05,0),13120042)),J.push(at(new ee(.04,.05,2,4).translate(.5,1.2,0),7229496)),J.push(at(new ee(.03,.03,1.6,4).rotateZ(.9).translate(1.2,1.1,0),7229496));let L=new Wt(Ue(J),St);L.castShadow=!0,L.position.y=.15,Ut.add(L)}i.add(Ut);let wt={x:d.x+a*2.5+-l*1,z:d.z+l*2.5+a*1,rot:-Math.atan2(l,a)+.4},Ot=new Wt(ol(1.8,.75,.4,15327952,9067066).translate(0,.08,0),St);Ot.castShadow=!0,i.add(Ot);let Bt={x:c.x+a*5+-l*1.4,z:c.z+l*5+a*1.4,rot:-Math.atan2(l,a)},Ft=new Le;{let J=[ol(4,1.3,.85,16052714,2051705)];J.push(at(new Kt(1.2,.45,.8).translate(-.6,.6,0),14273974)),J.push(at(new ee(.05,.06,5.2,5).translate(.3,2.9,0),7229496)),J.push(at(new ee(.04,.04,2.4,4).rotateZ(Math.PI/2).translate(-.9,1,0),7229496));let L=new oe;L.setAttribute("position",new Lt([.25,1.05,0,-2,1.05,0,.25,5.3,0],3));let pt=new oe;pt.setAttribute("position",new Lt([.4,4.9,0,.4,1.1,0,2,.55,0],3)),J.push(at(L,16776434),at(pt,16769952));let yt=new Wt(Ue(J),St);yt.castShadow=!0,yt.position.y=.2,Ft.add(yt)}i.add(Ft);let Jt=new Le;{let J=[],L=(ct,Dt,bt,Et,M)=>{let _=at(ct,Dt);_.translate(bt,Et,M),J.push(_)};L(new Re(.55,1),16054267,0,.45,0),L(new Re(.4,1),16054267,0,1.12,0),L(new Re(.28,1),16054267,0,1.6,0),L(new Se(.06,.3,5).rotateZ(-Math.PI/2),16742938,.38,1.6,0),L(new Jn(.04,4,3),2236962,.24,1.7,.1),L(new Jn(.04,4,3),2236962,.24,1.7,-.1),L(new Kt(.1,.12,.62),13120042,.05,1.36,0),L(new Kt(.08,.42,.14),13120042,.36,1.18,.16),L(new Kt(.085,.05,.15),16053492,.36,1.1,.16),L(new ee(.025,.025,.8,3).rotateX(1),6111271,0,1.25,.6),L(new ee(.025,.025,.8,3).rotateX(-1),6111271,0,1.25,-.6);let pt=new Wt(Ue(J),new Ye({vertexColors:!0}));pt.castShadow=!0,Jt.add(pt);let yt=new Wt(Ue([at(new ee(.2,.2,.3,8).translate(0,1.95,0),2236962),at(new ee(.3,.3,.03,8).translate(0,1.8,0),2236962)]),pt.material),Pt=new Wt(Ue([at(new Se(.24,.55,8).rotateZ(.35).translate(-.06,2.02,0),13904426),at(new vi(.23,.06,5,10).rotateX(Math.PI/2).translate(0,1.82,0),16777215),at(new Re(.08,0).translate(-.2,2.24,0),16777215)]),pt.material);yt.castShadow=Pt.castShadow=!0,Jt.add(yt,Pt),Jt.userData.hat=yt,Jt.userData.santa=Pt}let le=al(y.x,y.z,8,1,0,(J,L,pt)=>pt>1&&pt<3.5&&Math.hypot(J-y.x,L-y.z)>2.6&&Math.hypot(J-m.x,L-m.z)>2.6&&Ki(J,L)>1&&On(J,L)<.3&&!R.some(yt=>Math.hypot(yt.x-J,yt.z-L)<3)&&Math.hypot(J-p,L-D)>3)[0]||[y.x,te(y.x,y.z),y.z];Jt.position.set(le[0],le[1]-.05,le[2]),Jt.rotation.y=-Math.atan2(c.z-le[2],c.x-le[0]),Jt.scale.setScalar(.001),Jt.visible=!1,i.add(Jt),s.push([le[0],le[2],1.5]);for(let J of Vn){let[L,pt]=J.pts[0],[yt,Pt]=J.pts[1],ct=yt-L,Dt=Pt-pt,bt=Math.hypot(ct,Dt);ct/=bt,Dt/=bt;let Et=-Dt,M=ct,_=te(L,pt),B=(q,$,gt,F,rt,et,_t,xt)=>{let mt=at(new ls(1,0),_t,.14,ke);mt.scale(F,rt,et),or(mt,.18,ke),t.push(qt(mt,q,gt,$,xt))},k=L-ct*.6,Y=pt-Dt*.6,it=(q,$)=>te(q,$);B(k-ct*1.3,Y-Dt*1.3,it(k-ct*1.3,Y-Dt*1.3)+.6,1.9,1.6,1.6,9077884,ke()*6),B(k+Et*1.35,Y+M*1.35,it(k+Et*1.35,Y+M*1.35)+.4,1.1,1.25,1.2,8222575,ke()*6),B(k-Et*1.35,Y-M*1.35,it(k-Et*1.35,Y-M*1.35)+.4,1.15,1.2,1.25,8748661,ke()*6),B(k+ct*.15,Y+Dt*.15,_+1.45,1.75,.6,1.25,9603969,ke()*6),B(k+Et*2.3+ct*.6,Y+M*2.3+Dt*.6,it(k+Et*2.3,Y+M*2.3)+.15,.6,.45,.55,9406333,ke()*6),B(k-Et*2.2+ct*.9,Y-M*2.2+Dt*.9,it(k-Et*2.2,Y-M*2.2)+.1,.5,.4,.5,9406333,ke()*6);let ut=at(new ii(.85,9,0,Math.PI),1380879);t.push(qt(ut,k+ct*.35,_-.25,Y+Dt*.35,Math.atan2(ct,Dt)));for(let q=0;q<7;q++){let $=q/7*Math.PI*2,gt=at(new Re(.42+ke()*.3,0),q%2?5214010:4095284,.12,ke);gt.scale(1.3,.6,1.3);let F=Math.cos($)*1.2,rt=Math.sin($)*1.2;t.push(qt(gt,k+F-ct*.5,_+2+ke()*.3,Y+rt-Dt*.5))}for(let q of[-1,1]){let $=at(new Se(.35,1.3,4),4889148);$.rotateX(Math.PI/2+.5),$.rotateY(Math.atan2(ct,Dt)),t.push(qt($,k+Et*q*.7+ct*.6,_+1.65,Y+M*q*.7+Dt*.6))}s.push([k,Y,3.2])}let ze=new Wt(Ue(t),Ri(new Ye({vertexColors:!0,side:Ee}),{snow:1,wet:1,detail:"grain"}));ze.castShadow=!0,ze.receiveShadow=!0,i.add(ze);let Te=new un({vertexColors:!0,color:5585442,fog:!0}),Ce=new Wt(Ue(e),Te);i.add(Ce);let Ve=new Ct(3811868),We=new Ct(16761963);function cn(J,L,pt){Te.color.copy(Ve).lerp(We,pt.lights).multiplyScalar(1+.45*(pt.xmas||0));let yt=ce(1-pt.rain*.85-pt.snowCover*.3,.08,1)*(.55+.45*pt.lights),Pt=.85+.15*Math.sin(J*17)*Math.sin(J*7.3)+.08*Math.sin(J*31);C.scale.set(yt*(.9+.1*Math.sin(J*13)),yt*Pt*1.1,yt*(.9+.1*Math.cos(J*11))),C.rotation.y=J*.7,C.children[0].rotation.z=Math.sin(J*3)*.08*(1+pt.wind*3),b.intensity=yt*Pt*(4+26*pt.lights),nt.rotation.y=J*.9,Z.uniforms.uI.value=pt.lights*(.35+.65*pt.fogK)*.55,W.color.setRGB(.9+pt.lights*.1,.85+pt.lights*.1,.55+.1*pt.lights);let ct=(k,Y,it,ut,q=1)=>{let $=rr(Y,it,J,pt.sea)*q,hF=Math.cos(ut),hS=Math.sin(ut),gt=(rr(Y+hF,it-hS,J,pt.sea)-rr(Y-hF,it+hS,J,pt.sea))*q*.5,F=(rr(Y+hS,it+hF,J,pt.sea)-rr(Y-hS,it-hF,J,pt.sea))*q*.5;k.position.set(Y,$,it),k.rotation.set(-F*.9+Math.sin(J*1.3)*.02*q,ut,gt*.6+.025+Math.sin(J*1.1+1)*.012*q,"YXZ")};ct(Ut,wt.x+Math.sin(J*.21)*.5,wt.z+Math.cos(J*.17)*.5,wt.rot+Math.sin(J*.13)*.25,.3),ct(Ot,Bt.x,Bt.z,Bt.rot+Math.sin(J*.3)*.08,.25);let Dt=pt.sailAngle,bt=70,Et=Math.cos(Dt)*bt,M=Math.sin(Dt)*bt;ct(Ft,Et,M,-Dt-Math.PI/2,1),Ft.rotation.x+=-.05-pt.wind*.14;let _=Nt(.55,.85,pt.snowCover);Jt.visible=_>.01,Jt.scale.setScalar(Math.max(.001,_));let B=Nt(.2,.8,pt.xmas||0);Jt.userData.santa.scale.setScalar(Math.max(.001,B)),Jt.userData.hat.scale.setScalar(Math.max(.001,1-B)),Jt.userData.santa.visible=B>.01,Jt.userData.hat.visible=B<.99}return{group:i,glows:n,exclusions:s,update:cn,fire:{x:p,y:S,z:D},village:y,jetty:{J0:c,JE:d,dir:[a,l],deck:f,len:h},xmas:{huts:R,chimneys:g,tree:m,paddyHut:w,bridges:E,lighthouse:{x:H,y:V,z:j,h:tt},bungalows:x},otiFarm:{material:St}}}var ff=`
+}`}),r=new ni(e,s,i);r.frustumCulled=!1,r.renderOrder=5;let o=[];for(let d=0;d<i;d++){let x=t()*Math.PI*2,y=Math.sqrt(t())*104;o.push({x:Math.cos(x)*y,z:Math.sin(x)*y,y:33+t()*10,s:.75+t()*.75,rot:t()*Math.PI*2,thr:d/i,k:0,vy:t()})}let a=new ge,l=new qe,c=new z,h=new z,f=new z(0,1,0);function u(d,x,y,g,m){for(let v=0;v<i;v++){let w=o[v];w.x+=y.x*d,w.z+=y.y*d;let E=Math.hypot(w.x,w.z);E>118&&(w.x=-w.x*.98,w.z=-w.z*.98,w.k=0);let R=w.thr<x?1:0;w.k+=(R-w.k)*Math.min(1,d*.5);let A=1-Math.max(0,(E-106)/12),p=w.s*Math.sqrt(w.k)*Math.max(0,A)*(1+m);w.k<.04&&(p=0),l.setFromAxisAngle(f,w.rot),c.set(p*1.25,p*(.85+.3*w.vy)*(1-g*.25),p),h.set(w.x,w.y-g*8,w.z),a.compose(h,l,c),r.setMatrixAt(v,a)}r.instanceMatrix.needsUpdate=!0}return{mesh:r,uniforms:n,update:u}}var no=new Ct;function at(i,t,e=0,n=Math.random){let s=i.index?i.toNonIndexed():i;s.deleteAttribute("uv"),s.attributes.uv1&&s.deleteAttribute("uv1");let r=s.attributes.position.count,o=new Float32Array(r*3),a=new Ct(t);for(let l=0;l<r;l+=3){no.copy(a),e&&no.offsetHSL((n()-.5)*e*.1,0,(n()-.5)*e);for(let c=0;c<3&&l+c<r;c++)o[(l+c)*3]=no.r,o[(l+c)*3+1]=no.g,o[(l+c)*3+2]=no.b}return s.setAttribute("color",new Qe(o,3)),s.attributes.normal||s.computeVertexNormals(),s}function Ue(i){let t=rl(i,!1);return t.computeVertexNormals(),t}function af(i,t,e,n){let s=[],r=[],o=[],a=new z(0,1,0);for(let c=0;c<i.length;c++){let h=i[c],f=new z().subVectors(i[Math.min(c+1,i.length-1)],i[Math.max(c-1,0)]).normalize(),u=new z().crossVectors(f,a);u.lengthSq()<1e-4&&u.set(1,0,0),u.normalize();let d=new z().crossVectors(u,f).normalize(),x=[];for(let y=0;y<e;y++){let g=y/e*Math.PI*2;x.push(h.clone().addScaledVector(u,Math.cos(g)*t[c]).addScaledVector(d,Math.sin(g)*t[c]))}o.push(x)}for(let c=0;c<o.length-1;c++){let h=new Ct(n[c%n.length]);for(let f=0;f<e;f++){let u=o[c][f],d=o[c][(f+1)%e],x=o[c+1][f],y=o[c+1][(f+1)%e];s.push(u.x,u.y,u.z,x.x,x.y,x.z,d.x,d.y,d.z,d.x,d.y,d.z,x.x,x.y,x.z,y.x,y.y,y.z);for(let g=0;g<6;g++)r.push(h.r,h.g,h.b)}}let l=new oe;return l.setAttribute("position",new Lt(s,3)),l.setAttribute("color",new Lt(r,3)),l.computeVertexNormals(),l}function lf(i,t,e,n,s=6){let r=[],o=[],a=new Ct(n),l=new Ct(n).multiplyScalar(.78),c=[];for(let f=0;f<=s;f++){let u=f/s,d=u*i,x=Math.sin(u*Math.PI*.55)*i*.28-e*u*u*i,y=Math.sin(Math.min(1,u*1.15)*Math.PI)*t*(u<.08?.3:1);c.push([d,x,y])}for(let f=0;f<s;f++){let[u,d,x]=c[f],[y,g,m]=c[f+1],v=.25;r.push(u,d,0,y,g,0,y,g-m*v,-m,u,d,0,y,g-m*v,-m,u,d-x*v,-x),r.push(u,d,0,u,d-x*v,x,y,g-m*v,m,u,d,0,y,g-m*v,m,y,g,0);for(let w=0;w<6;w++)o.push(a.r,a.g,a.b);for(let w=0;w<6;w++)o.push(l.r,l.g,l.b)}let h=new oe;return h.setAttribute("position",new Lt(r,3)),h.setAttribute("color",new Lt(o,3)),h.computeVertexNormals(),h}function or(i,t,e){let n=i.attributes.position,s=new Map;for(let r=0;r<n.count;r++){let o=`${n.getX(r).toFixed(3)},${n.getY(r).toFixed(3)},${n.getZ(r).toFixed(3)}`,a=s.get(o);a||(a=[(e()-.5)*t,(e()-.5)*t,(e()-.5)*t],s.set(o,a)),n.setXYZ(r,n.getX(r)+a[0],n.getY(r)+a[1],n.getZ(r)+a[2])}return i.computeVertexNormals(),i}var ve=Ze(4242);function zx(){let i=[],t=[];for(let l=0;l<=7;l++){let c=l/7;i.push(new z(1.1*c*c,4.6*c,0)),t.push(.2-.07*c)}let r=[af(i,t,5,[9071176,10452824])],o=i[i.length-1],a=8;for(let l=0;l<a;l++){let c=lf(2.6+ve()*.6,.42,.55+ve()*.4,l%2?5220410:4101171);c.rotateZ(.15+ve()*.25),c.rotateY(l/a*Math.PI*2+ve()*.3),c.translate(o.x,o.y,o.z),r.push(c)}for(let l=0;l<3;l++){let c=at(new si(.17,0),7031338),h=l/3*Math.PI*2;c.translate(o.x+Math.cos(h)*.18,o.y-.18,o.z+Math.sin(h)*.18),r.push(c)}return Ue(r)}function Hx(){let i=[at(new ee(.12,.2,1.8,5,1,!0).translate(0,.9,0),8018492)],t=[[0,2.4,0,1.25],[.7,2,.3,.85],[-.6,2.1,-.3,.9],[.1,3,-.2,.8]];for(let[e,n,s,r]of t){let o=at(new Re(r,0),5216828,.12,ve);o.translate(e,n,s),i.push(o)}i[1]=or(at(new ls(1.3,0),5216828,.12,otiR),.14,otiR).translate(0,2.4,0);for(let k=2;k<5;k++)or(i[k],.14,otiR);for(let[z0,y0]of[[-.9,-.405],[.88,-.405]])i.push(at(new ee(.035,.075,.8,3,1,!0).translate(0,.4,0).rotateZ(z0).rotateY(y0).translate(0,1.3,0),8018492));return Ue(i)}function Gx(){let i=[at(new ee(.1,.16,1,5,1,!0).translate(0,.5,0),7031346)],t=[[.8,1.5,1.9],[1.6,1.25,1.6],[2.4,.95,1.4],[3.1,.6,1.1]];for(let[e,n,s]of t){let r=at(new Se(n,s,7),3109956,.1,ve);r.translate(0,e+s/2,0),i.push(r)}i.length=1;for(let[e,n,s]of[[.7,1.55,1.6],[1.35,1.32,1.45],[2,1.08,1.3],[2.62,.82,1.15],[3.2,.55,1]]){let r=at(new Se(n,s,8),3109956,.1,otiR),p=r.attributes.position;for(let k=0;k<p.count;k++){let x=p.getX(k),y=p.getY(k),z=p.getZ(k);y<0&&Math.hypot(x,z)>.01&&Math.round(Math.atan2(z,x)/.7854+8)%2&&p.setXYZ(k,x*.74,y+.07*s,z*.74)}r.computeVertexNormals(),r.translate(0,e+s/2,0),i.push(r)}return Ue(i)}function kx(){let i=[],t=[[0,.35,0,.55],[.45,.25,.1,.4],[-.35,.3,-.2,.42]];for(let[e,n,s,r]of t){let o=at(new Re(r,0),4164151,.15,ve);o.translate(e,n,s),i.push(o)}return Ue(i)}function Vx(){let i=new ls(.8,0),t=at(i,10129544,.12,ve);t.scale(1.2,.7,1),or(t,.25,ve);let g=t,p=g.attributes.position,c=g.attributes.color,m=new Ct(7309898),q=new Ct,A=new z,B=new z;for(let k=0;k<p.count;k++)p.getY(k)<-.34&&p.setY(k,-.34);for(let k=0;k<p.count;k+=3){A.set(p.getX(k+1)-p.getX(k),p.getY(k+1)-p.getY(k),p.getZ(k+1)-p.getZ(k)),B.set(p.getX(k+2)-p.getX(k),p.getY(k+2)-p.getY(k),p.getZ(k+2)-p.getZ(k)),A.cross(B).normalize();let w=ce((A.y-.6)/.3,0,1)*.45;for(let j=k;j<k+3;j++)q.setRGB(c.getX(j),c.getY(j),c.getZ(j)).lerp(m,w),c.setXYZ(j,q.r,q.g,q.b)}return g.computeVertexNormals(),g}function Wx(){let i=at(new ee(.02,.02,.35,3,1,!0).translate(0,.17,0),4028970),t=at(new si(.13,0).translate(0,.38,0),16777215),e=at(new Se(.09,.2,3).rotateZ(1).translate(.08,.12,0),4028970);return Ue([i,t,e])}function otiXx(){let R=Ze(977),i=[];for(let t=0;t<5;t++){let e=new oe,n=t/5*Math.PI*2+R()*.9,s=.05,r=.38+R()*.34,o=Math.cos(n),a=Math.sin(n),l=.1+R()*.12,cx=a*.05,cz=-o*.05,m=.55,ax=cx-s*o,az=cz-s*a,bx=cx+s*o,bz=cz+s*a,dx=cx+s*.7*o+l*.3*a,dz=cz+s*.7*a-l*.3*o,ex=cx-s*.7*o+l*.3*a,ez=cz-s*.7*a-l*.3*o;e.setAttribute("position",new Lt([ax,0,az,bx,0,bz,dx,r*m,dz,ax,0,az,dx,r*m,dz,ex,r*m,ez,ex,r*m,ez,dx,r*m,dz,cx+l*a,r,cz-l*o],3)),i.push(at(e,t%2?8175690:6202682))}return Ue(i)}function Xx(){let i=[];for(let t=0;t<4;t++){let e=new oe,n=t/4*Math.PI+ve()*.5,s=.07,r=.45+ve()*.3,o=Math.cos(n),a=Math.sin(n),l=.15;e.setAttribute("position",new Lt([-s*o,0,-s*a,s*o,0,s*a,l*a,r,-l*o],3)),i.push(at(e,t%2?8175690:6202682))}return Ue(i)}function qx(i){let t=[];if(i===0)for(let e=0;e<6;e++){let n=.5+ve()*.6,s=at(new ee(.04,.08,n,4,1,!0),16777215);s.translate(0,n/2,0),s.rotateZ((ve()-.5)*1.1),s.rotateY(ve()*6.28),t.push(s);let r=at(new si(.1,0),16777215),o=new z(0,n,0);r.translate(0,n,0),r.rotateZ(0),t.push(r)}else if(i===1){let e=at(new Re(.55,1),16777215,.15,ve);e.scale(1,.6,1),t.push(or(e,.1,ve))}else{let e=at(new ee(.7,.15,.18,7),16777215,.1,ve);e.translate(0,.45,0),t.push(e),t.push(at(new ee(.08,.12,.45,4).translate(0,.22,0),16777215))}return Ue(t)}var otiR=Ze(4243);function otiVG(g){g.computeBoundingBox();let b=g.boundingBox,p=g.attributes.position,c=g.attributes.color,n=g.attributes.normal,h=Math.max(b.max.y-b.min.y,.001),R=Math.max(b.max.x-b.min.x,b.max.z-b.min.z)/2||1;for(let k=0;k<p.count;k++){let t=(p.getY(k)-b.min.y)/h,r=Math.min(Math.hypot(p.getX(k),p.getZ(k))/R,1),f=(.74+.2*t+.16*r)*(n&&n.getY(k)<-.25?.86:1);c.setXYZ(k,c.getX(k)*f,c.getY(k)*f,c.getZ(k)*f)}c.needsUpdate=!0}function ji(i,t,e,n){otiVG(i);let s=Ri(new Ye(Object.assign({vertexColors:!0},e)),Object.assign({detail:n.caustics?0:n.sway?"veg":"rock"},n)),r=new ni(i,s,t);return r.castShadow=!0,r.receiveShadow=!0,r}function Qi(i,t,e,n,s){let r=[];for(let o=0;o<t&&r.length<i;o++){let a=-66+ve()*132,l=-46+ve()*102,c=te(a,l);if(!e(a,l,c))continue;let h=!0;for(let f of s)if((f[0]-a)**2+(f[1]-l)**2<(f[2]+n)**2){h=!1;break}h&&(r.push([a,c,l]),s.push([a,l,n*.5]))}return r}function cf(i,t,e){let n=new Le,s=i.map(N=>[N[0],N[1],N[2]]),r=(N,b,O)=>t.some(X=>(X[0]-N)**2+(X[2]-b)**2<O*O),o=(N,b)=>{let[O,X]=Ji(N,b);return O<2.6&&X<.999},a=(N,b,O=.8)=>!o(N,b)&&Ki(N,b)>O&&!sr(N,b,2.5),l=(N,b,O)=>_s(N*.045+7,b*.045-2)*.8+(b<4?.35:-.1)+(O>4?.2:0),c=e==="low"?.65:1,h=new ge,f=new qe,u=new Sn,d=new z,x=new z,y=new Ct,g=(N,b,O,X,H=.08,j=0,V=null)=>(b.forEach((tt,ht)=>{let W=O+ve()*(X-O);u.set((ve()-.5)*H,ve()*Math.PI*2,(ve()-.5)*H),f.setFromEuler(u),d.set(W,W*(.85+ve()*.3),W),x.set(tt[0],tt[1]+j,tt[2]),h.compose(x,f,d),N.setMatrixAt(ht,h),V&&(V(y,ht,tt),N.setColorAt(ht,y))}),N.count=b.length,N.instanceMatrix.needsUpdate=!0,N.instanceColor&&(N.instanceColor.needsUpdate=!0),n.add(N),N),m=(N,b=0)=>O=>{let X=1+(ve()-.5)*N;O.setRGB(X*(1+b*(ve()-.3)),X*(1+(ve()-.5)*N*.5),X*(1-b*ve()*.5))},v=Qi(Math.round(170*c),24e3,(N,b,O)=>O>.45&&O<2.4&&On(N,b)<.5&&a(N,b,1)&&vs(N,b)>12,1.8,s);g(ji(zx(),v.length,{side:Ee},{sway:.03}),v,.75,1.15,.12,-.1,m(.25,.15));let w=Qi(Math.round(480*c),7e4,(N,b,O)=>O<2||O>13||On(N,b)>1||!a(N,b,1.1)||r(N,b,3.2)?!1:l(N,b,O)>-.3||ve()<.15,1.1,s);g(ji(Hx(),w.length,{},{sway:.012}),w,.65,1.15,.1,-.15,m(.4,.5));let E=Qi(Math.round(190*c),26e3,(N,b,O)=>(O>5.5&&O<16.5&&vs(N,b)<18||O>4.5&&l(N,b,O)>.25||Math.hypot(N-wi.x,b-wi.z)<8)&&O>2&&On(N,b)<1.7&&!r(N,b,3)&&vs(N,b)>7.5&&a(N,b),1.2,s);g(ji(Gx(),E.length,{},{sway:.008}),E,.6,1.1,.06,-.1,m(.35,.1));let R=Qi(Math.round(360*c),24e3,(N,b,O)=>O>1.4&&O<14&&!r(N,b,2.5)&&a(N,b,.7),.9,s);g(ji(kx(),R.length,{},{sway:.06}),R,.6,1.3,.2,-.05,m(.4,.4));let A=Qi(Math.round(950*c),24e3,(N,b,O)=>O>1.3&&O<11&&On(N,b)<.9&&!r(N,b,2.5)&&a(N,b,.6),.25,s.slice(0,i.length)),otiGX=(()=>{let L=[];if(e==="low")return L;let R=Ze(4711),G=.62;for(let gz=-58;gz<64;gz+=G)for(let gx=-66;gx<66;gx+=G){let N=gx+R()*G,b=gz+R()*G,q=R();if(Math.hypot(N,b)>64)continue;let O=te(N,b);O>1.3&&O<11&&q<(.3+.7*Nt(-.15,.25,_s(N*.21+9,b*.21)))*.93&&On(N,b)<.9&&!r(N,b,2.5)&&a(N,b,.6)&&L.push([N,O,b])}return L})(),p=ji(e==="low"?Xx():(Xx(),otiXx()),A.length+otiGX.length,{side:Ee},{sway:.5});p.castShadow=!1,g(p,A,.8,1.6,.3,-.03,m(.3,.4));if(otiGX.length){let R=Ze(4712);otiGX.forEach((q,k)=>{let W=.7+R()*.8;u.set((R()-.5)*.3,R()*Math.PI*2,(R()-.5)*.3),f.setFromEuler(u),d.set(W,W*(.8+R()*.5),W),x.set(q[0],q[1]-.03,q[2]),h.compose(x,f,d),p.setMatrixAt(A.length+k,h);let K=(1.12-.42*Nt(4,7.5,q[1]))*(.85+R()*.3);y.setRGB(K*(1+.25*(R()-.3)),K,K*(1-.2*R())),p.setColorAt(A.length+k,y)}),p.count=A.length+otiGX.length,p.instanceMatrix.needsUpdate=!0,p.instanceColor&&(p.instanceColor.needsUpdate=!0)}let S=[16739211,16765503,16777215,16728128,11893759,16752448],D=Qi(Math.round(700*c),34e3,(N,b,O)=>O>1.6&&O<8&&On(N,b)<.7&&(_s(N*.07+3,b*.07)>.15||Qr(N*.12,b*.12)>.35)&&a(N,b,.6),.2,s.slice(0,i.length)),P=ji(Wx(),D.length,{},{sway:1.2});P.castShadow=!1,g(P,D,.8,1.4,.3,0,(N,b)=>N.set(S[Math.floor(ve()*S.length)]));let C=Qi(Math.round(230*c),26e3,(N,b,O)=>{if(!a(N,b,.8))return!1;let X=On(N,b);return vs(N,b)<he.rimR+.8?!1:O>-3&&O<.6&&ve()<.35||X>.55&&O>1||O>14&&ve()<.5},1.2,s.slice(0,i.length));g(ji(Vx(),C.length,{},{}),C,.5,1.6,.6,-.15,(N,b,O)=>{let X=O[1]>14?.55+ve()*.15:.9+ve()*.25;N.setRGB(X,X*.97,X*.93)});let U=[16740241,16750193,16762719,12882687,16382065,7329279,16732014];for(let N=0;N<3;N++){let b=Qi(Math.round(90*c),1e4,(X,H,j)=>j<-.45&&j>-3.2&&ir(X,H)<$t.ringC+3.5,.8,[]),O=ji(qx(N),b.length,{},{snow:0,wet:0,caustics:!0});O.castShadow=!1,g(O,b,.6,1.4,.3,-.1,X=>X.set(U[Math.floor(ve()*U.length)]))}return{group:n,palms:v}}var ke=Ze(777),hf=new ge;function qt(i,t,e,n,s=0,r=1){return hf.compose(new z(t,e,n),new qe().setFromEuler(new Sn(0,s,0)),new z(r,r,r)),i.applyMatrix4(hf),i}function ol(i,t,e,n,s,hO){if(window.__islandBoatHull)return window.__islandBoatHull({BufferGeometry:oe,Float32BufferAttribute:Lt,Color:Ct},i,t,e,n,s,hO);let r=new Kt(i,e,t,4,1,1),o=r.attributes.position;for(let c=0;c<o.count;c++){let h=o.getX(c),f=o.getY(c),u=o.getZ(c),d=h/(i/2);d>.2&&(u*=Math.max(.05,1-(d-.2)*1.15)),d<-.7&&(u*=.85),f<0&&(u*=.55,h*=.92),f>0&&d>.6&&(f+=.12*e),o.setXYZ(c,h,f,u)}let a=at(r,n),l=at(new Kt(i*.9,.06,t*.98).translate(-i*.04,e/2,0),s);return Ue([a,l])}function al(i,t,e,n,s,r){let o=[];for(let a=0;a<4e3&&o.length<n;a++){let l=ke()*Math.PI*2,c=Math.sqrt(ke())*e,h=i+Math.cos(l)*c,f=t+Math.sin(l)*c,u=te(h,f);r(h,f,u)&&(o.some(d=>Math.hypot(d[0]-h,d[2]-f)<s)||o.push([h,u,f]))}return o}function uf(){let i=new Le,t=[],e=[],n=[],s=[],r=null;for(let J=2;J<3.3;J+=.03){let L=2;for(;L<18&&!(te($t.x+Math.cos(J)*L,$t.z+Math.sin(J)*L)>.55);L+=.2);let pt=$t.x+Math.cos(J)*L,yt=$t.z+Math.sin(J)*L,ct=On(pt+Math.cos(J)*1.5,yt+Math.sin(J)*1.5)+Math.abs(J-2.62)*.6;L<17.5&&(!r||ct<r.score)&&(r={a:J,r:L,score:ct,sx:pt,sz:yt})}let o=r.a+Math.PI,a=Math.cos(o),l=Math.sin(o),c={x:r.sx-a*1.5,z:r.sz-l*1.5},h=9.5,f=.95,u=-Math.atan2(l,a);for(let J=0;J<h/.42;J++){let L=J*.42,pt=c.x+a*L,yt=c.z+l*L,Pt=at(new Kt(.34,.1,1.5),J%3?11568473:10516048);if(t.push(qt(Pt,pt,f+(ke()-.5)*.03,yt,u)),J%4===0)for(let ct of[-.7,.7]){let Dt=pt+-l*ct,bt=yt+a*ct,Et=at(new ee(.08,.09,f+2.8,5),7229496);t.push(qt(Et,Dt,(f-2.8)/2+.15,bt))}}let d={x:c.x+a*h,z:c.z+l*h},x=[];for(let J of[-1,1]){let L=d.x+-l*J*3.2,pt=d.z+a*J*3.2;x.push([L,pt]);for(let ct=0;ct<6;ct++){let Dt=ct/6*2.4*J,bt=d.x+-l*Dt,Et=d.z+a*Dt;t.push(qt(at(new Kt(1.2,.1,.38),11568473),bt,f,Et,u))}t.push(qt(at(new Kt(2.8,.14,2.8),10779218),L,f+.05,pt,u));for(let[ct,Dt]of[[-1.2,-1.2],[1.2,-1.2],[-1.2,1.2],[1.2,1.2]])t.push(qt(at(new ee(.09,.1,3.6,5),7229496),L+ct,f-1.75,pt+Dt));t.push(qt(at(new Kt(2.1,1.25,2),15325368),L,f+.75,pt,u));let yt=at(new Se(2.25,1.5,4,1),13214298,.1,ke);t.push(qt(yt.rotateY(Math.PI/4),L,f+2.1,pt,u));let Pt=at(new Hi(.5,.45),16777215);e.push(qt(Pt.rotateY(-Math.PI/2*J+Math.PI/2),L+-l*J*1.06,f+.8,pt+a*J*1.06,u+(J>0?0:Math.PI)+Math.PI/2)),n.push([L+-l*J*1.15,f+.8,pt+a*J*1.15,1,.75,.4,2.2,0])}for(let J of[2.5,6.5])for(let L of[-.75,.75]){let pt=c.x+a*J+-l*L,yt=c.z+l*J+a*L;t.push(qt(at(new ee(.04,.04,1,4),4864556),pt,f+.5,yt));let Pt=at(new Kt(.16,.2,.16),16777215);e.push(qt(Pt,pt,f+1.05,yt)),n.push([pt,f+1.08,yt,1,.7,.35,1.6,0])}s.push([c.x,c.z,2.5]);let y={x:je.x,z:je.z},g=[],m={x:y.x-2.1,z:y.z-1.3},v=al(y.x,y.z,13.5,11,4.3,(J,L,pt)=>pt>1.2&&pt<5&&On(J,L)<.35&&Ji(J,L)[0]>3.5&&ir(J,L)>$t.rIn+1&&Ki(J,L)>1.5&&!sr(J,L,2)&&Math.hypot(J-y.x,L-y.z)>3.4);{let J=te(y.x,y.z);t.push(qt(at(new ee(.6,.65,.7,10,1,!0),10130572,.15,ke),y.x,J+.35,y.z)),t.push(qt(at(new ii(.58,10).rotateX(-Math.PI/2),2051960),y.x,J+.45,y.z));for(let L of[-1,1])t.push(qt(at(new ee(.05,.05,1.3,4),7229496),y.x+L*.55,J+1,y.z));t.push(qt(at(new Se(.9,.55,4).rotateY(Math.PI/4),11765311),y.x,J+1.85,y.z)),s.push([y.x,y.z,3.2]),s.push([m.x,m.z,2.2])}let w=null,E=[];{for(let q=0;q<288;q++)ke();let otiR=Ze(4271),M=-Oe.rot;let hc=[[Oe.a+2.2,-1.4],[Oe.a+1.9,.6],[-Oe.a-1.9,.6]].map(p=>otiTW(...p)),[Dt,bt]=hc.find(([x,z])=>v.every(h=>Math.hypot(h[0]-x,h[2]-z)>3.4))||hc[0],Et=te(Dt,bt)-.05,hh=1.45;w={x:Dt,z:bt,y:Et,rot:M,e:1.02,h:hh};for(let[a,b]of[[-1,-1],[1,-1],[1,1],[-1,1]])t.push(qt(at(new ee(.06,.07,hh+.4,4,1,!0),7229496),Dt+(a*Math.cos(M)+b*Math.sin(M))*.8,Et+hh/2-.2,bt+(-a*Math.sin(M)+b*Math.cos(M))*.8,M));t.push(qt(at(new Kt(1.75,.1,1.75),10779218),Dt,Et+.42,bt,M));let _=at(new Se(1.45,.85,4,1),13214298,.1,otiR);_.rotateY(Math.PI/4),t.push(qt(_,Dt,Et+hh+.42,bt,M)),s.push([Dt,bt,2.4]);{let[B,k]=otiTW(-4.75,.15),Y=te(B,k),r=M+.3;t.push(qt(at(new ee(.04,.04,1.8,4),7229496),B,Y+.9,k)),t.push(qt(at(new Kt(1.2,.06,.06),7229496),B,Y+1.35,k,r)),t.push(qt(at(new Kt(.4,.55,.25),4157358),B,Y+1.2,k,r)),t.push(qt(at(new Re(.17,0),14729328),B,Y+1.7,k)),t.push(qt(at(new Se(.38,.2,6),13214298),B,Y+1.9,k))}{let q=window.__islandFarm;if(q&&q.build)try{for(let g of q.build({BoxGeometry:Kt,CylinderGeometry:ee,ConeGeometry:Se,BufferGeometry:oe,Float32BufferAttribute:Lt,Color:Ct,tint:at,place:qt,rng:otiR,terrainHeight:te,field:{x:Oe.x,z:Oe.z,a:Oe.a,b:Oe.b,rot:Oe.rot,h:Oe.h,toWorld:otiTW,rim:otiTQ},hut:w}))t.push(g)}catch(g){console.warn("Island farm failed to build:",g)}}}for(let J of to)for(let L=0;L<J.length-1;L++){let[pt,yt]=J[L],[Pt,ct]=J[L+1],Dt=-1,bt=1e9;for(let vt=0;vt<=60;vt++){let Gt=vt/60,ft=Ji(pt+(Pt-pt)*Gt,yt+(ct-yt)*Gt)[0];ft<bt&&(bt=ft,Dt=Gt)}if(bt>.4)continue;let Et=pt+(Pt-pt)*Dt,M=yt+(ct-yt)*Dt,[,_,B]=Ji(Et,M);if(_>.97||E.some(vt=>Math.hypot(vt.x-Et,vt.z-M)<4))continue;let k=Math.atan2(ct-yt,Pt-pt),Y=-k,it=Math.cos(k),ut=Math.sin(k),q=2.5,$=te(Et-it*q,M-ut*q)+.04,gt=te(Et+it*q,M+ut*q)+.04,F=(gt-$)/(q*2),rt=Math.atan(F),et=Math.max(($+gt)/2,eo(_,B)+.35),_t=et-($+gt)/2,xt=vt=>($+gt)/2+F*vt+(.3+_t)*(1-(vt/q)**2),mt=et;for(let vt=-7;vt<=7;vt++){let Gt=vt*(q/7.2),ft=F-2*(.3+_t)*Gt/(q*q),zt=at(new Kt(.36,.09,1.3),vt%2?10779218:11568473);zt.rotateZ(Math.atan(ft)),t.push(qt(zt,Et+it*Gt,xt(Gt),M+ut*Gt,Y))}for(let vt of[-.62,.62]){let Gt=[-7,-2.4,2.4,7].map(ft=>ft*(q/7.2));for(let ft of Gt)t.push(qt(at(new ee(.04,.04,.66,4),7229496),Et+it*ft-ut*vt,xt(ft)+.33,M+ut*ft+it*vt));for(let ft=0;ft<Gt.length-1;ft++){let zt=Gt[ft],jt=Gt[ft+1],Tt=xt(zt)+.64,se=xt(jt)+.64,Pe=(zt+jt)/2,Tn=at(new Kt(Math.hypot(jt-zt,se-Tt)+.06,.06,.06),9071176);Tn.rotateZ(Math.atan2(se-Tt,jt-zt)),t.push(qt(Tn,Et+it*Pe-ut*vt,(Tt+se)/2,M+ut*Pe+it*vt,Y))}}s.push([Et,M,2.5]),E.push({x:Et,z:M,deck:mt,dir:k,slope:F,half:q,hA:$,hB:gt})}let R=[];v.forEach(([J,L,pt],yt)=>{let Pt=L-.15,ct=Math.atan2(c.z-pt,c.x-J),Dt=-ct+Math.PI/2;s.push([J,pt,2.6]);let bt=yt%2===0,Et=[15193005,14268814,15786692,13608826][yt%4],M=[12950095,11765311,13740898][yt%3];if(bt)t.push(qt(at(new ee(1.15,1.25,1.5,8),Et),J,Pt+.75,pt)),t.push(qt(at(new Se(1.75,1.7,8,2),M,.12,ke),J,Pt+2.3,pt,ke())),t.push(qt(at(new Se(.2,.5,5),9071162),J,Pt+3.3,pt));else{t.push(qt(at(new Kt(2.1,1.5,1.8),Et),J,Pt+.75,pt,Dt));let Y=at(new ee(.01,1.7,1.4,4,1),M,.12,ke);Y.scale(1.25,1,1),Y.rotateY(Math.PI/4),t.push(qt(Y,J,Pt+2.2,pt,Dt)),t.push(qt(at(new Kt(.3,.9,.3),9208696),J+Math.cos(ct+1.6)*.6,Pt+2.6,pt+Math.sin(ct+1.6)*.6)),g.push([J+Math.cos(ct+1.6)*.6,Pt+3.1,pt+Math.sin(ct+1.6)*.6])}let _=bt?1.2:.93,B=J+Math.cos(ct)*_,k=pt+Math.sin(ct)*_;t.push(qt(at(new Kt(.12,.9,.55),5913894),B,Pt+.45,k,-ct));for(let Y of[1.2,-1.2]){let it=ct+Y,ut=bt?1.19:.95,q=J+Math.cos(it)*ut,$=pt+Math.sin(it)*ut;e.push(qt(at(new Kt(.1,.38,.38),16777215),q,Pt+.95,$,-it)),n.push([q+Math.cos(it)*.15,Pt+.95,$+Math.sin(it)*.15,1,.72,.38,2,0])}R.push({x:J,y:Pt,z:pt,face:ct,round:bt,rot:Dt,door:[B,k]})});let A=al((y.x+r.sx)/2,(y.z+r.sz)/2,6,1,0,(J,L,pt)=>pt>.7&&pt<3&&On(J,L)<.3&&Ki(J,L)>1.2&&!R.some(yt=>Math.hypot(yt.x-J,yt.z-L)<3.5))[0]||[r.sx-a*3,1,r.sz-l*3],[p,S,D]=A;s.push([p,D,2.5]);for(let J=0;J<8;J++){let L=J/8*Math.PI*2;t.push(or(qt(at(new Re(.16,0),9407108),p+Math.cos(L)*.55,S+.05,D+Math.sin(L)*.55),.06,ke))}for(let J=0;J<3;J++){let L=at(new ee(.07,.07,.8,5),6111271);L.rotateZ(1.2),L.rotateY(J*2.1),t.push(qt(L,p,S+.2,D))}for(let J of[.6,2.4,4.3]){let L=at(new ee(.17,.17,1.3,6),8082996);L.rotateZ(Math.PI/2),L.rotateY(-J+Math.PI/2),t.push(qt(L,p+Math.cos(J)*1.5,S+.12,D+Math.sin(J)*1.5))}let P=new un({color:16747050,transparent:!0,opacity:.95,fog:!0}),C=new Le,U=new Wt(new Se(.28,.85,6).translate(0,.42,0),P),N=new Wt(new Se(.16,.55,5).translate(0,.28,0),new un({color:16769126,fog:!0}));C.add(U,N),C.position.set(p,S+.1,D),i.add(C),n.push([p,S+.5,D,1,.55,.2,3.2,2]);let b=new cs(16747066,0,14,1.6);b.position.set(p,S+1,D),i.add(b);let O=al(r.sx-a*1.5,r.sz-l*1.5,9,4,3.2,(J,L,pt)=>pt>.45&&pt<1.1&&On(J,L)<.25&&Math.hypot(J-p,L-D)>3&&Math.hypot(J-c.x,L-c.z)>2.5&&!R.some(yt=>Math.hypot(yt.x-J,yt.z-L)<3));if(O[0]){let[J,L,pt]=O[0];t.push(qt(at(new ee(.04,.04,2.1,4),15658734),J,L+1,pt));let yt=new Se(1.3,.55,8,1,!0).toNonIndexed(),Pt=[];for(let ct=0;ct<yt.attributes.position.count/3;ct++){let Dt=new Ct(ct%2?16777215:15222076);for(let bt=0;bt<3;bt++)Pt.push(Dt.r,Dt.g,Dt.b)}yt.deleteAttribute("uv"),yt.setAttribute("color",new Lt(Pt,3)),t.push(qt(yt,J,L+2,pt)),t.push(qt(at(new Kt(1.6,.03,.8),3909592),J+1,L+.03,pt+.4,.4)),s.push([J,pt,1.8])}if(O[1]){let[J,L,pt]=O[1],yt=ol(2.6,.7,.4,10506797,7027231);yt.rotateZ(.08),t.push(qt(yt,J,L+.15,pt,ke()*3)),s.push([J,pt,1.8])}if(O[2]){let[J,L,pt]=O[2];t.push(qt(at(new ee(.55,.65,.4,8),15126424),J,L+.15,pt));for(let yt=0;yt<4;yt++){let Pt=yt/4*Math.PI*2;t.push(qt(at(new ee(.14,.16,.5,6),15126424),J+Math.cos(Pt)*.45,L+.5,pt+Math.sin(Pt)*.45))}t.push(qt(at(new Se(.22,.5,6),15126424),J,L+.6,pt)),t.push(qt(at(new Hi(.2,.14).translate(.1,0,0),15222076),J,L+1,pt)),t.push(qt(at(new ee(.01,.01,.4,3),5592405),J,L+.9,pt))}let X=te(xs.x,xs.z),H=xs.x,j=xs.z,V=X-.2,tt=6.6;for(let J=0;J<6;J++){let L=J/6,pt=(J+1)/6,yt=xe(.95,.62,L),Pt=xe(.95,.62,pt);t.push(qt(at(new ee(Pt,yt,tt/6,10),J%2?14170415:16184042),H,V+(L+pt)/2*tt,j))}t.push(qt(at(new ee(1.25,1.35,.5,10),14275528),H,V+.1,j)),t.push(qt(at(new ee(.95,.85,.16,10),3159098),H,V+tt+.08,j)),t.push(qt(at(new ee(.06,.06,1,10,1,!0),3159098),H+0,V+tt+.6,j)),t.push(qt(at(new Se(.75,.75,10),13120042),H,V+tt+1.55,j)),t.push(qt(at(new Jn(.12,6,4),3159098),H,V+tt+2,j));let ht=at(new Kt(1.4,1,1.1),16184042);t.push(qt(ht,H-1.5,V+.5,j-.6,.3)),t.push(qt(at(new Se(1.15,.7,4),13120042).rotateY(Math.PI/4),H-1.5,V+1.35,j-.6,.3));let W=new un({color:16773552,fog:!0}),lt=new Wt(new ee(.42,.42,.7,10),W);lt.position.set(H,V+tt+.55,j),i.add(lt),n.push([H,V+tt+.55,j,1,.92,.6,5,3]),s.push([H,j,3]);let I=new Se(2.6,34,16,1,!0);I.translate(0,-17,0),I.rotateZ(Math.PI/2);let Z=new fe({transparent:!0,depthWrite:!1,blending:En,side:Ee,uniforms:{uI:{value:0}},vertexShader:"varying float vT; varying vec3 vN; varying vec3 vV; void main(){ vT = clamp(position.x / 34.0, 0.0, 1.0); vec4 mv = modelViewMatrix*vec4(position,1.0); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }",fragmentShader:"uniform float uI; varying float vT; varying vec3 vN; varying vec3 vV; void main(){ float edge = pow(abs(dot(normalize(vN), normalize(vV))), 1.5); float a = pow(1.0 - vT, 2.2) * edge * uI; gl_FragColor = vec4(vec3(1.0, 0.93, 0.7) * a, 1.0); }"}),nt=new Le,dt=new Wt(rl([I,I.clone().rotateY(Math.PI)],!1),Z);nt.add(dt),nt.position.set(H,V+tt+.55,j),nt.renderOrder=8,i.add(nt);let St=Ri(new Ye({vertexColors:!0,side:Ee}),{snow:1,wet:1,detail:"grain"}),Ut=new Le;{let J=[ol(2.8,1.1,.7,2977704,15921126)];J.push(at(new Kt(.9,.7,.8).translate(-.4,.65,0),15921126)),J.push(at(new Kt(1,.1,.9).translate(-.4,1.05,0),13120042)),J.push(at(new ee(.04,.05,2,4).translate(.5,1.2,0),7229496)),J.push(at(new ee(.03,.03,1.6,4).rotateZ(.9).translate(1.2,1.1,0),7229496));let L=new Wt(Ue(J),St);L.castShadow=!0,L.position.y=.15,Ut.add(L)}i.add(Ut);let wt={x:d.x+a*2.5+-l*1,z:d.z+l*2.5+a*1,rot:-Math.atan2(l,a)+.4},Ot=new Wt(ol(2.6,.6,.26,12603950,9071156,{bowRise:.7,sternRise:.6,transom:.12,bulwark:.55,rake:.03,trimColor:15786152}).translate(0,.04,0),St);Ot.castShadow=!0,i.add(Ot);let Bt={x:c.x+a*5+-l*1.4,z:c.z+l*5+a*1.4,rot:-Math.atan2(l,a)},Ft=new Le;{let J=[ol(4,1.3,.85,16052714,2051705)];J.push(at(new Kt(1.2,.45,.8).translate(-.6,.6,0),14273974)),J.push(at(new ee(.05,.06,5.2,5).translate(.3,2.9,0),7229496)),J.push(at(new ee(.04,.04,2.4,4).rotateZ(Math.PI/2).translate(-.9,1,0),7229496));let L=new oe;L.setAttribute("position",new Lt([.25,1.05,0,-2,1.05,0,.25,5.3,0],3));let pt=new oe;pt.setAttribute("position",new Lt([.4,4.9,0,.4,1.1,0,2,.55,0],3)),J.push(at(L,16776434),at(pt,16769952));let yt=new Wt(Ue(J),St);yt.castShadow=!0,yt.position.y=.2,Ft.add(yt)}i.add(Ft);let Jt=new Le;{let J=[],L=(ct,Dt,bt,Et,M)=>{let _=at(ct,Dt);_.translate(bt,Et,M),J.push(_)};L(new Re(.55,1),16054267,0,.45,0),L(new Re(.4,1),16054267,0,1.12,0),L(new Re(.28,1),16054267,0,1.6,0),L(new Se(.06,.3,5).rotateZ(-Math.PI/2),16742938,.38,1.6,0),L(new Jn(.04,4,3),2236962,.24,1.7,.1),L(new Jn(.04,4,3),2236962,.24,1.7,-.1),L(new Kt(.1,.12,.62),13120042,.05,1.36,0),L(new Kt(.08,.42,.14),13120042,.36,1.18,.16),L(new Kt(.085,.05,.15),16053492,.36,1.1,.16),L(new ee(.025,.025,.8,3).rotateX(1),6111271,0,1.25,.6),L(new ee(.025,.025,.8,3).rotateX(-1),6111271,0,1.25,-.6);let pt=new Wt(Ue(J),new Ye({vertexColors:!0}));pt.castShadow=!0,Jt.add(pt);let yt=new Wt(Ue([at(new ee(.2,.2,.3,8).translate(0,1.95,0),2236962),at(new ee(.3,.3,.03,8).translate(0,1.8,0),2236962)]),pt.material),Pt=new Wt(Ue([at(new Se(.24,.55,8).rotateZ(.35).translate(-.06,2.02,0),13904426),at(new vi(.23,.06,5,10).rotateX(Math.PI/2).translate(0,1.82,0),16777215),at(new Re(.08,0).translate(-.2,2.24,0),16777215)]),pt.material);yt.castShadow=Pt.castShadow=!0,Jt.add(yt,Pt),Jt.userData.hat=yt,Jt.userData.santa=Pt}let le=al(y.x,y.z,8,1,0,(J,L,pt)=>pt>1&&pt<3.5&&Math.hypot(J-y.x,L-y.z)>2.6&&Math.hypot(J-m.x,L-m.z)>2.6&&Ki(J,L)>1&&On(J,L)<.3&&!R.some(yt=>Math.hypot(yt.x-J,yt.z-L)<3)&&Math.hypot(J-p,L-D)>3)[0]||[y.x,te(y.x,y.z),y.z];Jt.position.set(le[0],le[1]-.05,le[2]),Jt.rotation.y=-Math.atan2(c.z-le[2],c.x-le[0]),Jt.scale.setScalar(.001),Jt.visible=!1,i.add(Jt),s.push([le[0],le[2],1.5]);for(let J of Vn){let[L,pt]=J.pts[0],[yt,Pt]=J.pts[1],ct=yt-L,Dt=Pt-pt,bt=Math.hypot(ct,Dt);ct/=bt,Dt/=bt;let Et=-Dt,M=ct,_=te(L,pt),B=(q,$,gt,F,rt,et,_t,xt)=>{let mt=at(new ls(1,0),_t,.14,ke);mt.scale(F,rt,et),or(mt,.18,ke),t.push(qt(mt,q,gt,$,xt))},k=L-ct*.6,Y=pt-Dt*.6,it=(q,$)=>te(q,$);B(k-ct*1.3,Y-Dt*1.3,it(k-ct*1.3,Y-Dt*1.3)+.6,1.9,1.6,1.6,9077884,ke()*6),B(k+Et*1.35,Y+M*1.35,it(k+Et*1.35,Y+M*1.35)+.4,1.1,1.25,1.2,8222575,ke()*6),B(k-Et*1.35,Y-M*1.35,it(k-Et*1.35,Y-M*1.35)+.4,1.15,1.2,1.25,8748661,ke()*6),B(k+ct*.15,Y+Dt*.15,_+1.45,1.75,.6,1.25,9603969,ke()*6),B(k+Et*2.3+ct*.6,Y+M*2.3+Dt*.6,it(k+Et*2.3,Y+M*2.3)+.15,.6,.45,.55,9406333,ke()*6),B(k-Et*2.2+ct*.9,Y-M*2.2+Dt*.9,it(k-Et*2.2,Y-M*2.2)+.1,.5,.4,.5,9406333,ke()*6);let ut=at(new ii(.85,9,0,Math.PI),1380879);t.push(qt(ut,k+ct*.35,_-.25,Y+Dt*.35,Math.atan2(ct,Dt)));for(let q=0;q<7;q++){let $=q/7*Math.PI*2,gt=at(new Re(.42+ke()*.3,0),q%2?5214010:4095284,.12,ke);gt.scale(1.3,.6,1.3);let F=Math.cos($)*1.2,rt=Math.sin($)*1.2;t.push(qt(gt,k+F-ct*.5,_+2+ke()*.3,Y+rt-Dt*.5))}for(let q of[-1,1]){let $=at(new Se(.35,1.3,4),4889148);$.rotateX(Math.PI/2+.5),$.rotateY(Math.atan2(ct,Dt)),t.push(qt($,k+Et*q*.7+ct*.6,_+1.65,Y+M*q*.7+Dt*.6))}s.push([k,Y,3.2])}let ze=new Wt(Ue(t),Ri(new Ye({vertexColors:!0,side:Ee}),{snow:1,wet:1,detail:"grain"}));ze.castShadow=!0,ze.receiveShadow=!0,i.add(ze);let Te=new un({vertexColors:!0,color:5585442,fog:!0}),Ce=new Wt(Ue(e),Te);i.add(Ce);let Ve=new Ct(3811868),We=new Ct(16761963);function cn(J,L,pt){Te.color.copy(Ve).lerp(We,pt.lights).multiplyScalar(1+.45*(pt.xmas||0));let yt=ce(1-pt.rain*.85-pt.snowCover*.3,.08,1)*(.55+.45*pt.lights),Pt=.85+.15*Math.sin(J*17)*Math.sin(J*7.3)+.08*Math.sin(J*31);C.scale.set(yt*(.9+.1*Math.sin(J*13)),yt*Pt*1.1,yt*(.9+.1*Math.cos(J*11))),C.rotation.y=J*.7,C.children[0].rotation.z=Math.sin(J*3)*.08*(1+pt.wind*3),b.intensity=yt*Pt*(4+26*pt.lights),nt.rotation.y=J*.9,Z.uniforms.uI.value=pt.lights*(.35+.65*pt.fogK)*.55,W.color.setRGB(.9+pt.lights*.1,.85+pt.lights*.1,.55+.1*pt.lights);let ct=(k,Y,it,ut,q=1)=>{let $=rr(Y,it,J,pt.sea)*q,hF=Math.cos(ut),hS=Math.sin(ut),gt=(rr(Y+hF,it-hS,J,pt.sea)-rr(Y-hF,it+hS,J,pt.sea))*q*.5,F=(rr(Y+hS,it+hF,J,pt.sea)-rr(Y-hS,it-hF,J,pt.sea))*q*.5;k.position.set(Y,$,it),k.rotation.set(-F*.9+Math.sin(J*1.3)*.02*q,ut,gt*.6+.025+Math.sin(J*1.1+1)*.012*q,"YXZ")};ct(Ut,wt.x+Math.sin(J*.21)*.5,wt.z+Math.cos(J*.17)*.5,wt.rot+Math.sin(J*.13)*.25,.3),otiCn.busy||ct(Ot,Bt.x,Bt.z,Bt.rot+Math.sin(J*.3)*.08,.25);let Dt=pt.sailAngle,bt=70,Et=Math.cos(Dt)*bt,M=Math.sin(Dt)*bt;ct(Ft,Et,M,-Dt-Math.PI/2,1),Ft.rotation.x+=-.05-pt.wind*.14;let _=Nt(.55,.85,pt.snowCover);Jt.visible=_>.01,Jt.scale.setScalar(Math.max(.001,_));let B=Nt(.2,.8,pt.xmas||0);Jt.userData.santa.scale.setScalar(Math.max(.001,B)),Jt.userData.hat.scale.setScalar(Math.max(.001,1-B)),Jt.userData.santa.visible=B>.01,Jt.userData.hat.visible=B<.99}let otiCn={mesh:Ot,moor:Bt,busy:!1};return{group:i,glows:n,exclusions:s,update:cn,fire:{x:p,y:S,z:D},village:y,jetty:{J0:c,JE:d,dir:[a,l],deck:f,len:h},xmas:{huts:R,chimneys:g,tree:m,paddyHut:w,bridges:E,lighthouse:{x:H,y:V,z:j,h:tt},bungalows:x},otiFarm:{material:St,canoe:otiCn,fishing:{x:wt.x,z:wt.z,drift:.5},jetty:{J0:c,JE:d,dir:[a,l],deck:f,len:h,width:1.5},huts:R,bridges:E,bungalows:x,plaza:[je.x,je.z],paths:to,river:Vn[0].pts,riverAt:q=>nr(q,0),riverSurface:q=>{let[x,z]=nr(q,0);return Math.max(.05,Math.min(eo(q,0)-.12,te(x,z)+.45))},riverWidth:q=>1.25+ce(q,0,1)*.55,props:[[je.x,je.z,.8],[p,D,1.7]]}}}var ff=`
 vec3 lavaColor(vec2 p, float t, float heat){
   float n = fbm3(p + vec2(t*0.15, -t*0.1));
   float n2 = vnoise(p*2.3 - vec2(t*0.3, t*0.2));
