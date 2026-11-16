@@ -987,8 +987,46 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
     [-3.8, -0.95, 0.45, 2.25],             // front left
     [0.95, 4.1, 0.45, 2.4],                // front right
   ];
-  const BED_H = 0.1;                        // ridge crest height above the field
+  const BED_H = 0.09;                       // ridge crest height above the field
   const RIDGES = 3;                         // wheat rows sit on the ridge crests
+
+  // Each bed is a rounded, slightly wobbly patch (a seeded superellipse) rather than a
+  // rectangle, tilted a hair, its soil feathering into the grass: the bed mesh ends in a
+  // low skirt, and soil(lx, lz) tints the terrain's own vertex colours round it (the bundle
+  // asks for it while it colours the field).
+  const seeded = (a) => () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const SHAPES = BEDS.map(([x0, x1, z0, z1], i) => {
+    const R = seeded(4049 + i * 131);
+    return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, ax: (x1 - x0) / 2 + 0.06, az: (z1 - z0) / 2 + 0.06, n: 3 + R() * 0.9,
+      p1: R() * TAU, p2: R() * TAU, w1: 0.035 + R() * 0.03, w2: 0.02 + R() * 0.02, tilt: (R() - 0.5) * 0.09 };
+  });
+  const toBed = (s, lx, lz) => {             // field-local -> bed-local
+    const c = Math.cos(s.tilt), n = Math.sin(s.tilt), x = lx - s.cx, z = lz - s.cz;
+    return [x * c + z * n, -x * n + z * c];
+  };
+  const toField = (s, x, z) => {             // bed-local -> field-local
+    const c = Math.cos(s.tilt), n = Math.sin(s.tilt);
+    return [s.cx + x * c - z * n, s.cz + x * n + z * c];
+  };
+  const rho = (s, x, z) => {                 // 1 on the outline, < 1 inside
+    const a = Math.atan2(z / s.az, x / s.ax), wob = 1 + s.w1 * Math.sin(3 * a + s.p1) + s.w2 * Math.sin(5 * a + s.p2);
+    return Math.pow(Math.pow(Math.abs(x) / s.ax, s.n) + Math.pow(Math.abs(z) / s.az, s.n), 1 / s.n) / wob;
+  };
+  const halfWidth = (s, z) => {              // x extent of the outline at bed-local z
+    let lo = 0, hi = s.ax * 1.3;
+    for (let i = 0; i < 22; i++) { const m = (lo + hi) / 2; if (rho(s, m, z) < 1 && rho(s, -m, z) < 1) lo = m; else hi = m; }
+    return lo;
+  };
+  // how much soil colour the ground takes at field-local (lx, lz): 1 under a bed, fading out
+  // over about 1.1 beyond its outline
+  function soil(lx, lz) {
+    let k = 0;
+    for (const s of SHAPES) {
+      const [x, z] = toBed(s, lx, lz), d = (rho(s, x, z) - 1) * Math.min(s.ax, s.az);
+      if (d < 1.1) k = Math.max(k, d <= 0 ? 1 : (1 - d / 1.1) ** 2);
+    }
+    return k;
+  }
   const MILL = { lx: 0, lz: -0.05, turn: 0.3, hub: 2.75, front: 0.78, R: 1.75 };
 
   function build(T) {
@@ -1014,43 +1052,58 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
       return g;
     };
     F.beds = [];
-    for (const [x0, x1, z0, z1] of BEDS) {
-      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, hx = (x1 - x0) / 2, hz = (z1 - z0) / 2, e = 0.07;
-      const top = [];                       // profile across the bed: valley, crest, valley...
-      for (let i = 0; i <= RIDGES * 2; i++) top.push([-hz + e + ((2 * hz - 2 * e) * i) / (RIDGES * 2), i % 2 ? BED_H : BED_H * 0.45]);
+    const SOIL = [0x6f4b2e, 0x5a3b24], EDGE = 0x6b4a2f, RIM = new T.Color(0x7b7a3c);   // crest, furrow, edge, skirt (soil going green)
+    for (const s of SHAPES) {
       const at = (x, z, y) => {             // bed-local -> world
-        const [wx, wz] = f.toWorld(cx + x, cz + z);
+        const [lx, lz] = toField(s, x, z), [wx, wz] = f.toWorld(lx, lz);
         return [wx, f.h + y, wz];
       };
-      const UP = [0, 1, 0];
-      const soil = [0x6f4b2e, 0x5b3c25];
-      for (let i = 0; i < top.length - 1; i++) {
-        const [za, ya] = top[i], [zb, yb] = top[i + 1];
-        const a = at(-hx + e, za, ya), b = at(hx - e, za, ya), c = at(hx - e, zb, yb), d = at(-hx + e, zb, yb);
-        const col = soil[i % 2];
-        tri(a, b, c, col, UP); tri(a, c, d, col, UP);
+      const UP = [0, 1, 0], KX = 4, L = RIDGES * 2;
+      // lines across the bed: edge, furrow, crest, furrow, crest, furrow, crest... edge, each
+      // spanning the outline at its z (so the corners come out rounded)
+      const lines = [];
+      for (let j = 0; j <= L; j++) {
+        const z = -s.az * 0.86 + (s.az * 1.72 * j) / L, hw = halfWidth(s, z) * (j === 0 || j === L ? 0.97 : 0.99);
+        const y = j === 0 || j === L ? 0.03 : j % 2 ? BED_H : BED_H * 0.5;
+        const pts = [];
+        for (let i = 0; i <= KX; i++) {
+          const u = i / KX, x = -hw + 2 * hw * u, dome = 1 - 0.25 * (2 * u - 1) ** 4;
+          pts.push([x, z, j === 0 || j === L ? y : y * dome]);
+        }
+        lines.push(pts);
       }
-      const side = 0x654328;
-      for (const s of [-1, 1]) {            // long sides (along lx)
-        const zt = s < 0 ? top[0] : top[top.length - 1];
-        const [ox, oz] = [Math.sin(f.rot) * -s, Math.cos(f.rot) * s];
-        const w = [ox, 0.3, oz];
-        const a = at(-hx, s * hz, 0), b = at(hx, s * hz, 0), c = at(hx - e, zt[0], zt[1]), d = at(-hx + e, zt[0], zt[1]);
-        tri(a, b, c, side, w); tri(a, c, d, side, w);
+      for (let j = 0; j < L; j++) for (let i = 0; i < KX; i++) {
+        const a = lines[j][i], b = lines[j][i + 1], c = lines[j + 1][i + 1], d = lines[j + 1][i];
+        const col = j === 0 || j === L - 1 ? EDGE : SOIL[j % 2];
+        tri(at(...a), at(...b), at(...c), col, UP); tri(at(...a), at(...c), at(...d), col, UP);
       }
-      for (const s of [-1, 1]) {            // ends: the ridge profile fanned down to the ground
-        const w = [Math.cos(f.rot) * s, 0.3, Math.sin(f.rot) * s];
-        const B0 = at(s * hx, -hz, 0), B1 = at(s * hx, hz, 0), m = RIDGES;
-        const Tp = top.map(([z, y]) => at(s * (hx - e), z, y));
-        for (let i = 0; i < m; i++) tri(B0, Tp[i], Tp[i + 1], side, w);
-        for (let i = m; i < Tp.length - 1; i++) tri(B1, Tp[i], Tp[i + 1], side, w);
-        tri(B0, Tp[m], B1, side, w);
+      // the outline, all the way round, and a skirt that sinks to the grass outside it
+      const ring = lines[0].slice();
+      for (let j = 1; j < L; j++) ring.push(lines[j][KX]);
+      ring.push(...lines[L].slice().reverse());
+      for (let j = L - 1; j > 0; j--) ring.push(lines[j][0]);
+      const outer = ring.map(([x, z]) => {
+        const nx = x / (s.ax * s.ax), nz = z / (s.az * s.az), l = Math.hypot(nx, nz) || 1;
+        return [x + (nx / l) * 0.32, z + (nz / l) * 0.32, 0.012];
+      });
+      for (let k = 0; k < ring.length; k++) {
+        const k2 = (k + 1) % ring.length, a = at(...ring[k]), b = at(...ring[k2]), c = at(...outer[k2]), d = at(...outer[k]);
+        const n0 = P.length;
+        tri(a, b, c, EDGE, UP); tri(a, c, d, EDGE, UP);
+        // outer corners take the skirt colour
+        for (let v = n0 / 3; v < P.length / 3; v++) {
+          const px = P[v * 3], pz = P[v * 3 + 2];
+          if ((px === c[0] && pz === c[2]) || (px === d[0] && pz === d[2])) { K[v * 3] = RIM.r; K[v * 3 + 1] = RIM.g; K[v * 3 + 2] = RIM.b; }
+        }
       }
       out.push(flush());
-      // the rows the wheat grows on (crests), field-local
+      // wheat rows on the crests (bed-local z, x extent), a little short of the ends
       const rows = [];
-      for (let i = 1; i < top.length; i += 2) rows.push(cz + top[i][0]);
-      F.beds.push({ x0: x0 + 0.16, x1: x1 - 0.16, rows, y: f.h + BED_H - 0.035 });
+      for (let j = 1; j < L; j += 2) {
+        const z = lines[j][0][1], hw = halfWidth(s, z);
+        rows.push({ z, x0: -hw + 0.14, x1: hw - 0.14 });
+      }
+      F.beds.push({ shape: s, rows, top: f.h + BED_H - 0.03 });
     }
 
     // ---------- the windmill's trestle (the wheel itself moves: see the plugin) ----------
@@ -1111,7 +1164,7 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
     return out;
   }
 
-  window.__islandFarm = { build };
+  window.__islandFarm = { build, soil };
 
   // ======================================================================================
   // Plugin: the wheel and the wheat
@@ -1211,12 +1264,13 @@ window.__islandBoatHull = function boatHull(T, L, B, H, hullColor, deckColor, o)
       const R = makeRng(8128), f = F.field, spacing = low ? 0.21 : 0.17;
       F.beds.forEach((b, bi) => {
         b.first = tufts.length;
-        for (const lz of b.rows) {
-          const n = Math.max(2, Math.round((b.x1 - b.x0) / spacing));
+        const W = Math.max(...b.rows.map((q) => q.x1 - q.x0));
+        for (const row of b.rows) {
+          const n = Math.max(2, Math.round((row.x1 - row.x0) / spacing));
           for (let i = 0; i <= n; i++) {
-            const lx = b.x0 + ((b.x1 - b.x0) * i) / n + (R() - 0.5) * spacing * 0.5;
-            const [x, z] = f.toWorld(lx, lz + (R() - 0.5) * 0.08);
-            tufts.push({ bed: bi, x, y: b.y, z, yaw: R() * TAU, size: (low ? 1.15 : 1) * (0.88 + R() * 0.24), r: R(), u: (lx - b.x0) / (b.x1 - b.x0) });
+            const bx = row.x0 + ((row.x1 - row.x0) * i) / n + (R() - 0.5) * spacing * 0.5;
+            const [lx, lz] = toField(b.shape, bx, row.z + (R() - 0.5) * 0.08), [x, z] = f.toWorld(lx, lz);
+            tufts.push({ bed: bi, x, y: b.top - (R() * 0.02), z, yaw: R() * TAU, size: (low ? 1.15 : 1) * (0.86 + R() * 0.28), r: R(), u: (bx + W / 2) / W });
           }
         }
         b.count = tufts.length - b.first;
@@ -6353,7 +6407,7 @@ normal = otiBump(normal, -vViewPosition, otiBh);`:"#include <normal_fragment_map
   ${e.wet?`if (uWet > 0.0) { vec3 oN = normalize(vSN); vec3 oV = normalize(cameraPosition - vSP); float fr = 1.0 - max(dot(oN, oV), 0.0); fr *= fr; fr *= fr;
   outgoingLight += uSkyHorizon * fr * smoothstep(0.55, 0.95, oN.y) * uWet * 0.3${e.terrain?" * smoothstep(-0.2, 0.4, vSP.y)":""}; }`:""}
 }
-#include <opaque_fragment>`)},i.customProgramCacheKey=()=>JSON.stringify(Object.assign({},e,{sway:e.sway?1:0,det:Zt.otiDet.value})),i}var _e=i=>new Ct(i),ye={deep:_e(4022123),seabed:_e(10464916),lagoonSand:_e(15918783),wetSand:_e(15259560),sand:_e(16182478),sand2:_e(15654838),dune:_e(14996380),grassLight:_e(10473308),grass:_e(7780426),grass2:_e(6268480),forest:_e(4164154),forest2:_e(3501875),rock:_e(9274232),rock2:_e(8024168),basalt:_e(4867138),ash:_e(6445654),crater:_e(2760992),crater2:_e(5909022),lavaField:_e(2828070),lavaField2:_e(3813164),river:_e(9208432),cliff:_e(10521716),path:_e(12755571),plaza:_e(13811087),soil:_e(8215612),meadow:_e(11130462)};function Qu(i,t){let e=t==="low"?200:245,s=De*2/e,r=[],o=[],a=[],l=[];let otiF=s/3,otiW=Math.ceil(De*2/(12*otiF))*12+1,otiO=-(otiW-1)*otiF/2,otiK=new Int32Array(otiW*otiW).fill(-1),otiM=new Uint8Array(otiW*otiW),otiA=(C,U)=>{let O=Math.hypot(C,U),X=!1;return O>De&&(C*=De/O,U*=De/O,X=!0),r.push(C),o.push(U),a.push(te(C,U)),l.push(X),r.length-1},otiQ=(I,J)=>{let k=J*otiW+I,j=2*otiF*.18;return otiK[k]<0&&(otiK[k]=otiA(otiO+I*otiF+il(I*.45,J*.45)*j,otiO+J*otiF+Qr(I*.45,J*.45)*j)),otiK[k]},otiH=(x0,z0,S)=>{let m=-1e9;for(let A=-2*otiF;A<=S+2*otiF+1e-6;A+=otiF)for(let B=-2*otiF;B<=S+2*otiF+1e-6;B+=otiF){let h=te(x0+A,z0+B);h>m&&(m=h)}return m};let c=i.flat();function h(D,P){let C=1e9;for(let U of c){let N=(U[0]-D)**2+(U[2]-P)**2;N<C&&(C=N)}return Math.sqrt(C)}let f=[],u=[],otiSF=[],otiSU=[],otiNV=[],otiSV=[],otiG=[],otiV=Q=>{if(otiG[Q])return otiG[Q];let x=r[Q],z=o[Q],h=a[Q],nx=te(x-.7,z)-te(x+.7,z),nz=te(x,z-.7)-te(x,z+.7),nl=Math.hypot(nx,1.4,nz),s1=0,s2=0;for(let k=0;k<8;k++){let c=Math.cos(k*.7854),q=Math.sin(k*.7854);s1+=te(x+c*2.2,z+q*2.2),s2+=te(x+c*5,z+q*5)}let oc=(ce((s1/8-h)/1.6,0,1)*.6+ce((s2/8-h)/4,0,1)*.4)*(h<-.35?.5:1);return otiG[Q]=[nx/nl,1.4/nl,nz/nl,1-.3*oc]},d=new Ct,x=e+1,y=(D,P,C,U,N)=>{let b=il(D*.15,C*.15),O=Qr(D*.5,C*.5),X=_s(D*3.1,C*3.1)*.5+((Math.sin(D*127.1+C*311.7)*43758.5453%1+1)%1-.5)*.5,H=vs(D,C),j=ir(D,C),V;if(P<-.35){let ht=ce(-P/9,0,1);V=d.copy(ye.lagoonSand).lerp(ye.seabed,j<$t.ringC+3?0:Nt(-.8,-3.2,P)).lerp(ye.deep,Nt(.15,1,ht)),O>.45&&P>-4&&j>6&&V.lerp(ye.grass2,.25)}else if(P<1.05+b*.4)V=d.copy(O>.2?ye.sand2:ye.sand),P<.1&&V.lerp(ye.wetSand,.5);else if(P<1.8+b*.6)V=d.copy(ye.dune).lerp(ye.grassLight,Nt(1.2,2.2,P+O));else{let ht=Nt(4.5,7.5,P+b*3)*(1-Nt(14,17,P+b*2));V=d.copy(ye.grassLight).lerp(O>0?ye.grass:ye.grass2,Nt(1.8,4.5,P));let W=Nt(.15,.45,_s(D*.07+3,C*.07))*(1-Nt(4,7,P));V.lerp(ye.meadow,W*.6),V.lerp(O>.1?ye.forest:ye.forest2,ht);let lt=Math.max(Nt(14,17.5,P+b*2.5),Nt(.7,1.7,N));V.lerp(O>0?ye.rock:ye.rock2,lt);let I=Nt(17,20.5,P+b*1.5)*Nt(13,8,H);V.lerp(O>.2?ye.ash:ye.basalt,I),H<he.rimR+.4&&V.copy(O>.1?ye.crater2:ye.crater);let Z=h(D,C),nt=1-Nt(1.2,3.4+b*1.5,Z);nt>0&&V.lerp(O>.3?ye.lavaField2:ye.lavaField,nt);let[dt,ot]=Ji(D,C);dt<2.4&&ot<.99&&V.lerp(ye.river,1-Nt(1.2,2.4,dt));let St=Ki(D,C);St<.9&&V.lerp(ye.path,1-Nt(.35,.85,St+O*.15));let Ut=Math.hypot(D-je.x,C-je.z);if(Ut<3.2&&V.lerp(ye.plaza,1-Nt(2.2,3.2,Ut+O*.4)),sr(D,C,3.5)){let[wt,Ot]=sl(D,C);otiTQ(wt,Ot,.25)<1?V.copy(O>0?ye.grass:ye.grass2).lerp(ye.meadow,.2):otiTD(wt,Ot)>0&&P>1.2&&N>.6&&V.copy(O>0?ye.grass:ye.grass2).lerp(ye.dune,ce(1.8-P,0,1)*.5)}N>1.2&&j<$t.rIn+3&&V.lerp(ye.cliff,.6)}N>.5&&P<1.8+b*.6&&(V.lerp(ye.cliff,Nt(.5,1.4,N)*(P<-.35?.6:.85)),V.lerp(O>0?ye.rock:ye.rock2,Nt(1.2,2.4,N)*.55));let tt=V.clone();return tt.offsetHSL(0,0,X*.035),tt},g=new z,m=new z,v=new z,w=new z,E=new z;function R(D,P,C){if(l[D]&&l[P]&&l[C])return;g.set(r[D],a[D],o[D]),m.set(r[P],a[P],o[P]),v.set(r[C],a[C],o[C]),w.subVectors(m,g),E.subVectors(v,g),w.cross(E);let U=w.length();if(U<1e-5||(w.divideScalar(U),w.y<0))return;let N=(g.x+m.x+v.x)/3,b=(g.y+m.y+v.y)/3,O=(g.z+m.z+v.z)/3,X=Math.sqrt(Math.max(0,1-w.y*w.y))/Math.max(w.y,.05),H=y(N,b,O,w.y,X);let otiD=Math.max(g.y,m.y,v.y)<-.3,otiX=otiD?otiSF:f,otiY=otiD?otiSU:u;otiX.push(g.x,g.y,g.z,m.x,m.y,m.z,v.x,v.y,v.z);let otiZ=otiD?otiSV:otiNV,otiS=.7-.3*Nt(.9,1.6,X);for(let j of[D,P,C]){let q=otiV(j),nx=xe(w.x,q[0],otiS),ny=xe(w.y,q[1],otiS),nz=xe(w.z,q[2],otiS),nl=Math.hypot(nx,ny,nz);otiZ.push(nx/nl,ny/nl,nz/nl),(K=>otiY.push(K.r*q[3],K.g*q[3],K.b*q[3]))(X>.4?y(r[j],a[j],o[j],q[1],Math.sqrt(Math.max(0,1-q[1]*q[1]))/Math.max(q[1],.05)):H)}}let otiL=[];for(let BJ=0;BJ<otiW-1;BJ+=12)for(let BI=0;BI<otiW-1;BI+=12){let S=12*otiF,x0=otiO+BI*otiF,z0=otiO+BJ*otiF,rc=Math.hypot(x0+S/2,z0+S/2);if(rc>De+S)continue;if(rc<De-S&&otiH(x0,z0,S)<-4.2){otiL.push(BI,BJ,12);continue}for(let J1=BJ;J1<BJ+12;J1+=6)for(let I1=BI;I1<BI+12;I1+=6){let M=6*otiF,x1=otiO+I1*otiF,z1=otiO+J1*otiF;if(Math.hypot(x1+M/2,z1+M/2)>De+M)continue;let hm=otiH(x1,z1,M),k=hm<-3.6?6:hm<-.1||h(x1+M/2,z1+M/2)<M*.71+4.5?3:2;for(let q=0;q<6;q+=k)for(let P=0;P<6;P+=k)otiL.push(I1+P,J1+q,k)}}for(let L=0;L<otiL.length;L+=3){let I=otiL[L],J=otiL[L+1],k=otiL[L+2];otiM[J*otiW+I]=otiM[J*otiW+I+k]=otiM[(J+k)*otiW+I]=otiM[(J+k)*otiW+I+k]=1}for(let L=0;L<otiL.length;L+=3){let I=otiL[L],J=otiL[L+1],k=otiL[L+2],B=[];for(let q=0;q<k;q++)otiM[(J+q)*otiW+I]&&B.push(I,J+q);for(let q=0;q<k;q++)otiM[(J+k)*otiW+I+q]&&B.push(I+q,J+k);for(let q=0;q<k;q++)otiM[(J+k-q)*otiW+I+k]&&B.push(I+k,J+k-q);for(let q=0;q<k;q++)otiM[J*otiW+I+k-q]&&B.push(I+k-q,J);if(B.length===8){let C=otiQ(I,J),U=otiQ(I+k,J),N=otiQ(I,J+k),b=otiQ(I+k,J+k);(I/k+J/k)%2===0?(R(C,N,U),R(U,N,b)):(R(C,N,b),R(C,b,U))}else{let c=otiA(otiO+(I+k/2)*otiF,otiO+(J+k/2)*otiF),n=B.length;for(let m=0;m<n;m+=2)R(c,otiQ(B[m],B[m+1]),otiQ(B[(m+2)%n],B[(m+3)%n]))}}let otiSN=f.length/3;f=f.concat(otiSF),u=u.concat(otiSU),otiNV=otiNV.concat(otiSV);let A=new oe;A.setAttribute("position",new Lt(f,3)),A.setAttribute("color",new Lt(u,3)),A.setAttribute("normal",new Lt(otiNV,3));let p=Ri(new Ye({vertexColors:!0}),{terrain:!0,snow:1}),S=new Wt(A,p);return S.receiveShadow=!0,S.castShadow=!0,S.name="terrain",S.onBeforeShadow=()=>A.setDrawRange(0,otiSN),S.onAfterShadow=()=>A.setDrawRange(0,1/0),S}function tf(){let t=[],e=[],n=[_e(13481098),_e(11769715),_e(9401948),_e(10257769),_e(7297608),_e(5982782)],s=9,r=new Ct;for(let u=0;u<180;u++){let d=u/180*Math.PI*2,x=(u+1)/180*Math.PI*2,y=De+.02,g=Math.cos(d)*y,m=Math.sin(d)*y,v=Math.cos(x)*y,w=Math.sin(x)*y,E=te(g*.999,m*.999),R=te(v*.999,w*.999);for(let A=0;A<s;A++){let p=A/s,S=(A+1)/s,D=xe($i,E,p),P=xe($i,E,S),C=xe($i,R,p),U=xe($i,R,S),N=_s(d*6,A*.7)*.6,b=ce(Math.floor((1-p)*n.length+N),0,n.length-1);r.copy(n[b]).offsetHSL(0,0,il(d*20,A)*.04),t.push(g,D,m,v,C,w,v,U,w,g,D,m,v,U,w,g,P,m);for(let O=0;O<6;O++)e.push(r.r,r.g,r.b)}}let o=new oe;o.setAttribute("position",new Lt(t,3)),o.setAttribute("color",new Lt(e,3)),o.computeVertexNormals();let a=new Wt(o,new Ye({vertexColors:!0,side:Ee})),l=new Le;l.add(a);let otiBG=[[new ee(De+1.6,De+2.4,2.2,96,1),7031347,$i-1.1],[new vi(De+1.6,.35,6,96).rotateX(Math.PI/2),13214826,$i]].map(([g,c,y])=>{if(g.groups.length>2){let x=g.index.array.slice(0,g.groups[2].start),m=0;for(let k=0;k<x.length;k++)m=Math.max(m,x[k]);g.setIndex(Array.from(x));for(let k of["position","normal"]){let A=g.attributes[k];g.setAttribute(k,new Lt(A.array.slice(0,(m+1)*3),3))}}g.clearGroups(),g.deleteAttribute("uv"),g.translate(0,y,0);let n=g.attributes.position.count,q=new Float32Array(n*3),C=new Ct(c);for(let k=0;k<n;k++)q[k*3]=C.r,q[k*3+1]=C.g,q[k*3+2]=C.b;return g.setAttribute("color",new Lt(q,3)),g});return l.add(new Wt(rl(otiBG,!1),a.material)),l}var Ox=256,ys=De*2+2;function ef(){let i=Ox,t=new Uint8Array(i*i*4),e=new Float32Array(i*i);for(let l=0;l<i;l++)for(let c=0;c<i;c++){let h=((c+.5)/i-.5)*ys,f=((l+.5)/i-.5)*ys;e[l*i+c]=te(h,f)}let n=1e6,s=new Float32Array(i*i);for(let l=0;l<i*i;l++)s[l]=e[l]>0?0:n;let r=ys/i,o=r*Math.SQRT2;for(let l=0;l<i;l++)for(let c=0;c<i;c++){let h=s[l*i+c];c>0&&(h=Math.min(h,s[l*i+c-1]+r)),l>0&&(h=Math.min(h,s[(l-1)*i+c]+r)),c>0&&l>0&&(h=Math.min(h,s[(l-1)*i+c-1]+o)),c<i-1&&l>0&&(h=Math.min(h,s[(l-1)*i+c+1]+o)),s[l*i+c]=h}for(let l=i-1;l>=0;l--)for(let c=i-1;c>=0;c--){let h=s[l*i+c];c<i-1&&(h=Math.min(h,s[l*i+c+1]+r)),l<i-1&&(h=Math.min(h,s[(l+1)*i+c]+r)),c<i-1&&l<i-1&&(h=Math.min(h,s[(l+1)*i+c+1]+o)),c>0&&l<i-1&&(h=Math.min(h,s[(l+1)*i+c-1]+o)),s[l*i+c]=h}for(let l=0;l<i;l++)for(let c=0;c<i;c++){let h=l*i+c,f=((c+.5)/i-.5)*ys,u=((l+.5)/i-.5)*ys,d=Math.hypot(f-$t.x,u-$t.z);t[h*4]=ce(Math.round((e[h]+12)/16*255),0,255),t[h*4+1]=ce(Math.round(s[h]/14*255),0,255),t[h*4+2]=Math.round((1-Nt($t.rIn-1,$t.ringC+1.5,d))*255),t[h*4+3]=255}let a=new as(t,i,i,Fn);return a.magFilter=an,a.minFilter=an,a.wrapS=a.wrapT=Hn,a.needsUpdate=!0,a}var zc=`
+#include <opaque_fragment>`)},i.customProgramCacheKey=()=>JSON.stringify(Object.assign({},e,{sway:e.sway?1:0,det:Zt.otiDet.value})),i}var _e=i=>new Ct(i),ye={deep:_e(4022123),seabed:_e(10464916),lagoonSand:_e(15918783),wetSand:_e(15259560),sand:_e(16182478),sand2:_e(15654838),dune:_e(14996380),grassLight:_e(10473308),grass:_e(7780426),grass2:_e(6268480),forest:_e(4164154),forest2:_e(3501875),rock:_e(9274232),rock2:_e(8024168),basalt:_e(4867138),ash:_e(6445654),crater:_e(2760992),crater2:_e(5909022),lavaField:_e(2828070),lavaField2:_e(3813164),river:_e(9208432),cliff:_e(10521716),path:_e(12755571),plaza:_e(13811087),soil:_e(8215612),meadow:_e(11130462)};function Qu(i,t){let e=t==="low"?200:245,s=De*2/e,r=[],o=[],a=[],l=[];let otiF=s/3,otiW=Math.ceil(De*2/(12*otiF))*12+1,otiO=-(otiW-1)*otiF/2,otiK=new Int32Array(otiW*otiW).fill(-1),otiM=new Uint8Array(otiW*otiW),otiA=(C,U)=>{let O=Math.hypot(C,U),X=!1;return O>De&&(C*=De/O,U*=De/O,X=!0),r.push(C),o.push(U),a.push(te(C,U)),l.push(X),r.length-1},otiQ=(I,J)=>{let k=J*otiW+I,j=2*otiF*.18;return otiK[k]<0&&(otiK[k]=otiA(otiO+I*otiF+il(I*.45,J*.45)*j,otiO+J*otiF+Qr(I*.45,J*.45)*j)),otiK[k]},otiH=(x0,z0,S)=>{let m=-1e9;for(let A=-2*otiF;A<=S+2*otiF+1e-6;A+=otiF)for(let B=-2*otiF;B<=S+2*otiF+1e-6;B+=otiF){let h=te(x0+A,z0+B);h>m&&(m=h)}return m};let c=i.flat();function h(D,P){let C=1e9;for(let U of c){let N=(U[0]-D)**2+(U[2]-P)**2;N<C&&(C=N)}return Math.sqrt(C)}let f=[],u=[],otiSF=[],otiSU=[],otiNV=[],otiSV=[],otiG=[],otiV=Q=>{if(otiG[Q])return otiG[Q];let x=r[Q],z=o[Q],h=a[Q],nx=te(x-.7,z)-te(x+.7,z),nz=te(x,z-.7)-te(x,z+.7),nl=Math.hypot(nx,1.4,nz),s1=0,s2=0;for(let k=0;k<8;k++){let c=Math.cos(k*.7854),q=Math.sin(k*.7854);s1+=te(x+c*2.2,z+q*2.2),s2+=te(x+c*5,z+q*5)}let oc=(ce((s1/8-h)/1.6,0,1)*.6+ce((s2/8-h)/4,0,1)*.4)*(h<-.35?.5:1);return otiG[Q]=[nx/nl,1.4/nl,nz/nl,1-.3*oc]},d=new Ct,x=e+1,y=(D,P,C,U,N)=>{let b=il(D*.15,C*.15),O=Qr(D*.5,C*.5),X=_s(D*3.1,C*3.1)*.5+((Math.sin(D*127.1+C*311.7)*43758.5453%1+1)%1-.5)*.5,H=vs(D,C),j=ir(D,C),V;if(P<-.35){let ht=ce(-P/9,0,1);V=d.copy(ye.lagoonSand).lerp(ye.seabed,j<$t.ringC+3?0:Nt(-.8,-3.2,P)).lerp(ye.deep,Nt(.15,1,ht)),O>.45&&P>-4&&j>6&&V.lerp(ye.grass2,.25)}else if(P<1.05+b*.4)V=d.copy(O>.2?ye.sand2:ye.sand),P<.1&&V.lerp(ye.wetSand,.5);else if(P<1.8+b*.6)V=d.copy(ye.dune).lerp(ye.grassLight,Nt(1.2,2.2,P+O));else{let ht=Nt(4.5,7.5,P+b*3)*(1-Nt(14,17,P+b*2));V=d.copy(ye.grassLight).lerp(O>0?ye.grass:ye.grass2,Nt(1.8,4.5,P));let W=Nt(.15,.45,_s(D*.07+3,C*.07))*(1-Nt(4,7,P));V.lerp(ye.meadow,W*.6),V.lerp(O>.1?ye.forest:ye.forest2,ht);let lt=Math.max(Nt(14,17.5,P+b*2.5),Nt(.7,1.7,N));V.lerp(O>0?ye.rock:ye.rock2,lt);let I=Nt(17,20.5,P+b*1.5)*Nt(13,8,H);V.lerp(O>.2?ye.ash:ye.basalt,I),H<he.rimR+.4&&V.copy(O>.1?ye.crater2:ye.crater);let Z=h(D,C),nt=1-Nt(1.2,3.4+b*1.5,Z);nt>0&&V.lerp(O>.3?ye.lavaField2:ye.lavaField,nt);let[dt,ot]=Ji(D,C);dt<2.4&&ot<.99&&V.lerp(ye.river,1-Nt(1.2,2.4,dt));let St=Ki(D,C);St<.9&&V.lerp(ye.path,1-Nt(.35,.85,St+O*.15));let Ut=Math.hypot(D-je.x,C-je.z);if(Ut<3.2&&V.lerp(ye.plaza,1-Nt(2.2,3.2,Ut+O*.4)),sr(D,C,3.5)){let[wt,Ot]=sl(D,C);otiTQ(wt,Ot,.25)<1?V.copy(O>0?ye.grass:ye.grass2).lerp(ye.meadow,.2).lerp(ye.soil,window.__islandFarm&&window.__islandFarm.soil?window.__islandFarm.soil(wt,Ot)*.65:0):otiTD(wt,Ot)>0&&P>1.2&&N>.6&&V.copy(O>0?ye.grass:ye.grass2).lerp(ye.dune,ce(1.8-P,0,1)*.5)}N>1.2&&j<$t.rIn+3&&V.lerp(ye.cliff,.6)}N>.5&&P<1.8+b*.6&&(V.lerp(ye.cliff,Nt(.5,1.4,N)*(P<-.35?.6:.85)),V.lerp(O>0?ye.rock:ye.rock2,Nt(1.2,2.4,N)*.55));let tt=V.clone();return tt.offsetHSL(0,0,X*.035),tt},g=new z,m=new z,v=new z,w=new z,E=new z;function R(D,P,C){if(l[D]&&l[P]&&l[C])return;g.set(r[D],a[D],o[D]),m.set(r[P],a[P],o[P]),v.set(r[C],a[C],o[C]),w.subVectors(m,g),E.subVectors(v,g),w.cross(E);let U=w.length();if(U<1e-5||(w.divideScalar(U),w.y<0))return;let N=(g.x+m.x+v.x)/3,b=(g.y+m.y+v.y)/3,O=(g.z+m.z+v.z)/3,X=Math.sqrt(Math.max(0,1-w.y*w.y))/Math.max(w.y,.05),H=y(N,b,O,w.y,X);let otiD=Math.max(g.y,m.y,v.y)<-.3,otiX=otiD?otiSF:f,otiY=otiD?otiSU:u;otiX.push(g.x,g.y,g.z,m.x,m.y,m.z,v.x,v.y,v.z);let otiZ=otiD?otiSV:otiNV,otiS=.7-.3*Nt(.9,1.6,X);for(let j of[D,P,C]){let q=otiV(j),nx=xe(w.x,q[0],otiS),ny=xe(w.y,q[1],otiS),nz=xe(w.z,q[2],otiS),nl=Math.hypot(nx,ny,nz);otiZ.push(nx/nl,ny/nl,nz/nl),(K=>otiY.push(K.r*q[3],K.g*q[3],K.b*q[3]))(X>.4?y(r[j],a[j],o[j],q[1],Math.sqrt(Math.max(0,1-q[1]*q[1]))/Math.max(q[1],.05)):H)}}let otiL=[];for(let BJ=0;BJ<otiW-1;BJ+=12)for(let BI=0;BI<otiW-1;BI+=12){let S=12*otiF,x0=otiO+BI*otiF,z0=otiO+BJ*otiF,rc=Math.hypot(x0+S/2,z0+S/2);if(rc>De+S)continue;if(rc<De-S&&otiH(x0,z0,S)<-4.2){otiL.push(BI,BJ,12);continue}for(let J1=BJ;J1<BJ+12;J1+=6)for(let I1=BI;I1<BI+12;I1+=6){let M=6*otiF,x1=otiO+I1*otiF,z1=otiO+J1*otiF;if(Math.hypot(x1+M/2,z1+M/2)>De+M)continue;let hm=otiH(x1,z1,M),k=hm<-3.6?6:hm<-.1||h(x1+M/2,z1+M/2)<M*.71+4.5?3:2;for(let q=0;q<6;q+=k)for(let P=0;P<6;P+=k)otiL.push(I1+P,J1+q,k)}}for(let L=0;L<otiL.length;L+=3){let I=otiL[L],J=otiL[L+1],k=otiL[L+2];otiM[J*otiW+I]=otiM[J*otiW+I+k]=otiM[(J+k)*otiW+I]=otiM[(J+k)*otiW+I+k]=1}for(let L=0;L<otiL.length;L+=3){let I=otiL[L],J=otiL[L+1],k=otiL[L+2],B=[];for(let q=0;q<k;q++)otiM[(J+q)*otiW+I]&&B.push(I,J+q);for(let q=0;q<k;q++)otiM[(J+k)*otiW+I+q]&&B.push(I+q,J+k);for(let q=0;q<k;q++)otiM[(J+k-q)*otiW+I+k]&&B.push(I+k,J+k-q);for(let q=0;q<k;q++)otiM[J*otiW+I+k-q]&&B.push(I+k-q,J);if(B.length===8){let C=otiQ(I,J),U=otiQ(I+k,J),N=otiQ(I,J+k),b=otiQ(I+k,J+k);(I/k+J/k)%2===0?(R(C,N,U),R(U,N,b)):(R(C,N,b),R(C,b,U))}else{let c=otiA(otiO+(I+k/2)*otiF,otiO+(J+k/2)*otiF),n=B.length;for(let m=0;m<n;m+=2)R(c,otiQ(B[m],B[m+1]),otiQ(B[(m+2)%n],B[(m+3)%n]))}}let otiSN=f.length/3;f=f.concat(otiSF),u=u.concat(otiSU),otiNV=otiNV.concat(otiSV);let A=new oe;A.setAttribute("position",new Lt(f,3)),A.setAttribute("color",new Lt(u,3)),A.setAttribute("normal",new Lt(otiNV,3));let p=Ri(new Ye({vertexColors:!0}),{terrain:!0,snow:1}),S=new Wt(A,p);return S.receiveShadow=!0,S.castShadow=!0,S.name="terrain",S.onBeforeShadow=()=>A.setDrawRange(0,otiSN),S.onAfterShadow=()=>A.setDrawRange(0,1/0),S}function tf(){let t=[],e=[],n=[_e(13481098),_e(11769715),_e(9401948),_e(10257769),_e(7297608),_e(5982782)],s=9,r=new Ct;for(let u=0;u<180;u++){let d=u/180*Math.PI*2,x=(u+1)/180*Math.PI*2,y=De+.02,g=Math.cos(d)*y,m=Math.sin(d)*y,v=Math.cos(x)*y,w=Math.sin(x)*y,E=te(g*.999,m*.999),R=te(v*.999,w*.999);for(let A=0;A<s;A++){let p=A/s,S=(A+1)/s,D=xe($i,E,p),P=xe($i,E,S),C=xe($i,R,p),U=xe($i,R,S),N=_s(d*6,A*.7)*.6,b=ce(Math.floor((1-p)*n.length+N),0,n.length-1);r.copy(n[b]).offsetHSL(0,0,il(d*20,A)*.04),t.push(g,D,m,v,C,w,v,U,w,g,D,m,v,U,w,g,P,m);for(let O=0;O<6;O++)e.push(r.r,r.g,r.b)}}let o=new oe;o.setAttribute("position",new Lt(t,3)),o.setAttribute("color",new Lt(e,3)),o.computeVertexNormals();let a=new Wt(o,new Ye({vertexColors:!0,side:Ee})),l=new Le;l.add(a);let otiBG=[[new ee(De+1.6,De+2.4,2.2,96,1),7031347,$i-1.1],[new vi(De+1.6,.35,6,96).rotateX(Math.PI/2),13214826,$i]].map(([g,c,y])=>{if(g.groups.length>2){let x=g.index.array.slice(0,g.groups[2].start),m=0;for(let k=0;k<x.length;k++)m=Math.max(m,x[k]);g.setIndex(Array.from(x));for(let k of["position","normal"]){let A=g.attributes[k];g.setAttribute(k,new Lt(A.array.slice(0,(m+1)*3),3))}}g.clearGroups(),g.deleteAttribute("uv"),g.translate(0,y,0);let n=g.attributes.position.count,q=new Float32Array(n*3),C=new Ct(c);for(let k=0;k<n;k++)q[k*3]=C.r,q[k*3+1]=C.g,q[k*3+2]=C.b;return g.setAttribute("color",new Lt(q,3)),g});return l.add(new Wt(rl(otiBG,!1),a.material)),l}var Ox=256,ys=De*2+2;function ef(){let i=Ox,t=new Uint8Array(i*i*4),e=new Float32Array(i*i);for(let l=0;l<i;l++)for(let c=0;c<i;c++){let h=((c+.5)/i-.5)*ys,f=((l+.5)/i-.5)*ys;e[l*i+c]=te(h,f)}let n=1e6,s=new Float32Array(i*i);for(let l=0;l<i*i;l++)s[l]=e[l]>0?0:n;let r=ys/i,o=r*Math.SQRT2;for(let l=0;l<i;l++)for(let c=0;c<i;c++){let h=s[l*i+c];c>0&&(h=Math.min(h,s[l*i+c-1]+r)),l>0&&(h=Math.min(h,s[(l-1)*i+c]+r)),c>0&&l>0&&(h=Math.min(h,s[(l-1)*i+c-1]+o)),c<i-1&&l>0&&(h=Math.min(h,s[(l-1)*i+c+1]+o)),s[l*i+c]=h}for(let l=i-1;l>=0;l--)for(let c=i-1;c>=0;c--){let h=s[l*i+c];c<i-1&&(h=Math.min(h,s[l*i+c+1]+r)),l<i-1&&(h=Math.min(h,s[(l+1)*i+c]+r)),c<i-1&&l<i-1&&(h=Math.min(h,s[(l+1)*i+c+1]+o)),c>0&&l<i-1&&(h=Math.min(h,s[(l+1)*i+c-1]+o)),s[l*i+c]=h}for(let l=0;l<i;l++)for(let c=0;c<i;c++){let h=l*i+c,f=((c+.5)/i-.5)*ys,u=((l+.5)/i-.5)*ys,d=Math.hypot(f-$t.x,u-$t.z);t[h*4]=ce(Math.round((e[h]+12)/16*255),0,255),t[h*4+1]=ce(Math.round(s[h]/14*255),0,255),t[h*4+2]=Math.round((1-Nt($t.rIn-1,$t.ringC+1.5,d))*255),t[h*4+3]=255}let a=new as(t,i,i,Fn);return a.magFilter=an,a.minFilter=an,a.wrapS=a.wrapT=Hn,a.needsUpdate=!0,a}var zc=`
 uniform sampler2D uHeightTex; uniform float uTexSize;
 uniform float uTime; uniform float uSea; uniform float uWind; uniform vec2 uWindDir;
 ${Bn}
