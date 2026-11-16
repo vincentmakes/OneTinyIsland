@@ -43,9 +43,10 @@ Defined on `:root`. Components use `var(--…)`; a raw colour in a component rul
 
 Illustration colours are the only exceptions and stay inline: the time slider's day gradient
 (`#142048`, `#3a3f7a`, `#ff9a6a`, `#8fd0ff`), the loading screen's sky gradient (`#b3cde0`,
-`#9cb6c8`, `#7593a9`, sampled from the scene's opening frame) and its diorama (facet colours from
-the bundle's palette `ye`, the plinth and the lava; smoke `#f4f7f9`), and the failure screen's
-`#1d4f7a`.
+`#9cb6c8`, `#7593a9`, sampled from the scene's opening frame), its wordmark (sea blues `#1d5a8c`
+and `#2974a6`, volcano rock `#8d8378`, `#6e6560`, `#4a4442`, `#2a2120`, lava `#ff7a3c` and
+`#ffc46b`, palm `#7a5a3a`, `#2f7a35`, `#63ad45`, ink `#13202f`) and its progress track (ink at
+16%), and the failure screen's `#1d4f7a`.
 
 ## Glass surfaces
 
@@ -65,7 +66,7 @@ sans-serif`, antialiased. No web fonts.
 
 | Size | Weight | Where |
 |---|---|---|
-| 20 px | 700 (`b`) | Failure screen title, loading screen name |
+| 20 px | 700 (`b`) | Failure screen title |
 | 17 px | 700 | Panel title |
 | 15 px | 600 / 400 | Chip weather name (600), switch row labels (400), time value (600, tabular), loading and failure text |
 | 14 px | 600 | Speed segments (tabular), action buttons |
@@ -198,18 +199,28 @@ a camera you moved eases up to 9.5 above land so it stays over the treetops.
 
 ### Loading and failure screens
 Loading: a pale sky gradient matched to the scene's opening frame (so the cross-fade is not a
-jolt), a tiny low-poly diorama of the island (`clamp(150px, 42vmin, 240px)` wide, 4:3) and under
-it "One Tiny Island" (20/700) and "Shaping a tiny island…" (15/400), both in `--ink` (7.8:1 to
-10:1 on the gradient behind them, 5.1:1 at its darkest corner). The art is `aria-hidden`; the text
-is plain text. The diorama is built from HTML wrappers, each holding one static inline SVG layer
-in a shared 200 x 150 frame (plinth and sea, sand and shallows, volcano, hills and pines, huts,
-palms, lighthouse islet), plus three smoke puffs and a cloud. The pieces pop in one after another
-(0 to 1.15 s, then a gentle bob, rising smoke and a drifting cloud for as long as loading takes).
-Only `transform` and `opacity` are animated, on HTML elements, so the compositor keeps it moving
-while the scene build blocks the main thread; never animate anything else here, and never animate
-elements inside the SVGs. Any frame of it must look finished enough, because a fast machine shows
-it for a fraction of a second: no minimum display time. It fades out over 0.6 s once the first
-scene frame has been drawn, then is removed (with reduced motion it disappears at once).
+jolt) and, centred on it with 12 px gaps, the wordmark, the line "Shaping a tiny island…" (15/400,
+`--ink`: 7.8:1 to 10:1 on the gradient behind it, 5.1:1 at its darkest corner) and a progress bar.
+- **Wordmark:** one static inline SVG (`.ld-name`, `clamp(220px, 64vmin, 380px)` wide, 480 x 190
+  frame, `role="img"`, `aria-label="One Tiny Island"`). Low-poly block capitals with straight
+  edges only: "ONE TINY" small in ink over a large "ISLAND" in two sea blues (a jagged lighter
+  facet across the top, clipped to the letters) with an ink extrusion down and to the right. The
+  A is the volcano (three rock facets, crater, lava) and a palm stands on the foot of the L. The
+  blues hold at least 3:1 on the gradient behind them. It is the only place the name is drawn
+  this way; the panel title stays plain text.
+- **Progress bar:** `.ld-bar`, `clamp(160px, 46vmin, 260px)` wide, 8 px tall, radius 4 (the
+  slider track's size), track ink at 16%, fill `--ink`, `aria-hidden` (the line above it says
+  what is happening). The scene build blocks the main thread, so the bar cannot measure anything:
+  it is an estimate that eases from 0 toward 95% over 8 s, quick at first (about half way after
+  1.5 s). When the first scene frame is drawn a second fill sweeps to 100% in 0.25 s while the
+  loader fades.
+- Only `transform` and `opacity` are animated, on HTML elements, so the compositor keeps the bar
+  moving while the scene build blocks the main thread; never animate anything else here, and
+  never animate elements inside the SVG. Any frame of it must look finished, because a fast
+  machine shows it for a fraction of a second: no minimum display time. It fades out over 0.6 s
+  once the first scene frame has been drawn, then is removed. With reduced motion there is no
+  bar (the wordmark and the line stay) and the loader disappears at once.
+
 Without JavaScript a `<noscript>` style hides the loader, so only the noscript message shows and
 nothing animates. Failure: dark radial gradient, bold title + one friendly line in `--muted`; the
 loader is removed at once underneath it.
@@ -233,12 +244,12 @@ Check every UI change at 1280 x 720, 390 x 844 and 320 x 568.
 | Toast, restore button | .3 s | ease |
 | Switch track / thumb | .2 s / .22 s | ease / `cubic-bezier(.3, 1.4, .5, 1)` (overshoot) |
 | Loading fade | .6 s | ease |
-| Loading pieces pop in | .55 s each, staggered 0–1.15 s | `cubic-bezier(.3, 1.6, .6, 1)` (overshoot), rise 14% from half size |
-| Loading idle: bob / smoke / cloud | 4 s / 3.3 s (three puffs 1.1 s apart) / 16 s loops | ease-in-out / ease-out / linear |
+| Loading bar estimate | 8 s, 0 to 95% | `cubic-bezier(.2, .7, .3, 1)` (quick start, long tail) |
+| Loading bar completes | .25 s | ease-out |
 
 `prefers-reduced-motion: reduce` turns all of these off: no transitions on the panel, toast,
 hidden UI, switch, restore button or UI layer, no loading fade (the loader disappears at once),
-and the loading diorama is shown finished and still (one puff of smoke, no bob). Auto-rotate also starts off.
+and no loading bar (the wordmark and the line are enough). Auto-rotate also starts off.
 Any new animation needs its reduced-motion rule in the same change.
 
 ## Accessibility
@@ -260,7 +271,7 @@ Any new animation needs its reduced-motion rule in the same change.
   (snow cover at noon, fog, from above and from the default camera, desktop and phone), not over
   the night sky. Measured worst cases now: chip muted text 4.93:1 (was 3.18 with `--glass` .58 and
   `--muted` .66), chip weather name 7.42, toast 6.44, panel muted text 5.60–6.71, Erupt FAB icon
-  about 4.6, loading text 7.8–10 (5.1 at the gradient's darkest corner). Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
+  about 4.6, loading text 7.8–10 (5.1 at the gradient's darkest corner), loading wordmark blues 3.1 and 4.4. Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
   hover and focus).
 - **Keyboard:** Tab reaches everything visible, then the island view. **H** hides or shows the UI,
   **Esc** closes the panel. Enter / Space activate buttons, arrows move the slider. With the island
