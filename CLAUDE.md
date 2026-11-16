@@ -1,6 +1,6 @@
 # One Tiny Island: notes for coding sessions
 
-A just-for-fun, procedural low-poly three.js island diorama (volcano, village, a windmill and wheat beds, a villager with a canoe, lagoon, wildlife, 8 weathers, day/night, boats, a galleon and friendly pirates) in **one self-contained HTML page**, deployed as a static site.
+A just-for-fun, procedural low-poly three.js island diorama (volcano, village, a windmill and wheat beds, a villager with a canoe, lagoon, wildlife and macaws, 8 weathers, day/night, boats, a galleon and friendly pirates) in **one self-contained HTML page**, deployed as a static site.
 
 ## Layout
 
@@ -9,6 +9,7 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, a
   - `<script id="boat-hull">`: readable hull builder `window.__islandBoatHull`, used by every boat.
   - `<script id="ships">`: readable plugin with the galleon and the pirate ship.
   - `<script id="farm">`: readable `window.__islandFarm` (`build`, `soil`, called by the bundle) and the `farm` plugin (windmill wheel, wheat, villager and canoe).
+  - `<script id="parrots">`: readable `parrots` plugin (three pairs of red-and-blue macaws).
   - one huge `<script>`: an esbuild-minified IIFE of three.js r187 plus the app. **No sources exist.**
   - `<script id="hints">`: one-time "Drag to look around" toast (`localStorage['oti-hint-drag']`).
 - `scripts/screenshots.mjs`: Playwright generator for `docs/screenshots/*.jpg` (read its header).
@@ -21,7 +22,7 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, a
 1. One self-contained file: no extra JS/CSS files, no CDN, no fonts, no images loaded by the page.
 2. Zero network requests at runtime. No build step: the repo root is the site.
 3. Kid friendly: nobody gets hurt, nothing burns or sinks. Cannonballs always miss.
-4. Keep `window.__island` (and `__island.ships`, `__island.farm`) stable: the screenshot script, the README and people's consoles use it.
+4. Keep `window.__island` (and `__island.ships`, `__island.farm`, `__island.parrots`) stable: the screenshot script, the README and people's consoles use it.
 5. The page must load with a clean console (no errors, no warnings) and keep working without WebGL extras, sound or storage.
 6. UI changes follow UI-GUIDELINES.md (and update it in the same commit).
 
@@ -43,17 +44,17 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, a
   | `Oe` / `sl` / `sr` | farm field footprint (`x, z` centre, `a, b` ellipse half axes, `rot`, `h` the flat field's height), world to field-local coordinates, footprint test. The footprint is what huts, trees and paths avoid: changing it moves everything placed after |
   | `nf` | water and rim wall; `rr(x,z,t,sea)` wave height, the JS twin of GLSL `waveH` (string `Ku`): seven Stokes-shaped trains via `otiWv` (two near main swells that beat into sets, a cross swell, two wind seas, two chop trains growing with sea²). Keep the two identical: boats, ships and dolphins ride on `rr` |
   | `sf` / `of` | sky dome / clouds |
-  | `cf` | vegetation |
+  | `cf` | vegetation; returns the broadleaf-tree InstancedMesh (made from `Hx()`) as `otiForest` (`kit.forest`) |
   | `uf` | village and boats (`ol` = hull helper, delegates to `__islandBoatHull`); also the field hut (exported as `xmas.paddyHut` for the eave lights in `Mf`; the name stays), the scarecrow, the call to `__islandFarm.build` (its geometries join the merged static mesh), the canoe `Ot` with its hand-over flag `otiCn.busy`, and `otiFarm` (published as `kit.farm`). The lighthouse beams are one geometry holding both cones; their shader fades on `abs(position.x)` |
   | `df` | volcano; the lava streams are one indexed mesh (`otiLS`/`otiLD`/`otiLP`, offset `otiLO` per stream) |
-  | `mf` | wildlife (gulls, dolphins, fish, turtles) |
+  | `mf` | wildlife (gulls, dolphins, fish, turtles). Gull frame: built with the body along +x and wings along z, then turned a quarter turn about y, so **the head points along local -z** and the wings lie along x; the yaw is `PI - N` (circling with `sp > 0`) or `-N`, and the bank (Euler XYZ: roll about the body, then yaw) leans each bird into its turn. The two lagoon turtles are one InstancedMesh of 2 (`otiTu`), hidden together under ice |
   | `Mf` | Christmas extras (sleigh and friends; the snowman lives in `uf`) |
   | `ci` / `io` / `hl` | weather presets / weather name list / weather state machine class |
   | `wn` | SVG icons: Material Symbols Rounded paths wrapped by `Be` (see UI-GUIDELINES.md, Icons) |
   | `wf` | UI (panel, toasts, keys) |
   | `ul` | audio class |
   | `jx` | main: renderer, scene, lighting `Te(dt)`, simulation step `Et(dt)`, loop `bt`, frame `otiFrame` (mirror pass, scene, post step), `window.__island` |
-  | `Ri` | material patcher (snow/wet/wind shader hooks, and the per-pixel surface detail on High) |
+  | `Ri` | material patcher (snow/wet/wind shader hooks, and the per-pixel surface detail on High). Option `flap`: wings flap by `abs(x)`, scaled under instancing by the flap factor `otiFl = clamp((|instance x scale| / |instance y scale| - 0.5) * 2.5, 0, 1)`: a uniformly scaled bird flaps fully, one squashed along its wingspan to under half stops flapping (folded wings) |
 
   Helpers: `at` tint geometry, `Ue` merge geometries, `Ze` seeded rng, `ce` clamp, `xe` lerp, `Nt` smoothstep, `De` world radius (86).
 - Patched-in code uses `oti`-prefixed names (`otiP` plugin list, `otiU` plugin update, `otiF` per-frame shadow throttle + adaptive pixel ratio, `otiSlow`/`otiFT`/`otiAd`/`otiWarm` adaptive resolution state, `otiFS` fish schools, `otiAD`/`otiAR` aurora dice...). Realism pass: terrain `otiQ`/`otiL` (adaptive lattice), `otiV`/`otiG` (per-vertex normal + occlusion cache), land-first index order with the seabed left out of the shadow pass; `otiVG` vegetation vertex gradient; `otiGlow`/`otiPlaza` night plaza light pool uniforms; `otiDry` skips water cells under land. Farm field (flat at `Oe.h`): `otiTG(f)` scales the rim ellipse round its outline, so the field is **not left-right symmetric**; `otiTQ(lx, lz, inset)` rim metric (< 1 inside), `otiTD` signed footprint distance (blend apron in `Yu`, `sr`), `otiTW` field-local to world; `otiR = Ze(4271)` the field block's own rng (after the `ke` burn of 288 draws, which keeps everything placed later where it was). Inside the field the terrain is grass, tinted toward `ye.soil` by `__islandFarm.soil(lx, lz)` (looked up and tested once through `otiSo`/`otiSoI`; a missing or throwing farm leaves plain grass). The river shader no longer has a still-water branch (`aFade` stays 0..1). Farm hooks: `otiFarm` (kit.farm), `otiCn` (canoe hand-over), the mirror opt-out `userData.otiNoMirror`. Lighthouse islet in `Fx`: `otiLD`/`otiLT` (flat top, kept out of the lagoon gap). Some short names (`otiF`, `otiV`) are reused as locals in other scopes: grep with context. Use the same prefix for anything new so patches stay greppable.
@@ -92,7 +93,7 @@ A just-for-fun, procedural low-poly three.js island diorama (volcano, village, a
 | MeshLambertMaterial | `Ye` | terrainHeight | `te` |
 | MeshBasicMaterial | `un` | rng / clamp / lerp / smoothstep | `Ze` / `ce` / `xe` / `Nt` |
 
-Also `worldRadius` (`De`), `scene`, `camera`, `controls`, `state`, `toast(msg)`, `audio()` (the `ul` instance) and `farm` (`uf`'s `otiFarm`): `material` (the boats' `St`), `canoe` (`{mesh, moor, busy}`), `jetty` (`J0`, `JE`, `dir`, `deck`, `len`, `width`), `huts`, `bridges`, `bungalows`, `fishing` (`{x, z, drift}`), `props` (well and campfire as `[x, z, r]`), `plaza`, `paths` (`to`), `river` (`Vn[0].pts`), `riverAt(u)`, `riverSurface(u)` (the water height `_f` bakes), `riverWidth(u)`.
+Also `worldRadius` (`De`), `scene`, `camera`, `controls`, `state`, `toast(msg)`, `audio()` (the `ul` instance) and `farm` (`uf`'s `otiFarm`): `material` (the boats' `St`), `canoe` (`{mesh, moor, busy}`), `jetty` (`J0`, `JE`, `dir`, `deck`, `len`, `width`), `huts`, `bridges`, `bungalows`, `fishing` (`{x, z, drift}`), `props` (well and campfire as `[x, z, r]`), `plaza`, `paths` (`to`), `river` (`Vn[0].pts`), `riverAt(u)`, `riverSurface(u)` (the water height `_f` bakes), `riverWidth(u)`; and `forest`: the broadleaf trees' InstancedMesh (perch trees for the parrots).
 
 ## Boats and ships
 
@@ -115,12 +116,20 @@ Also `worldRadius` (`De`), `scene`, `camera`, `controls`, `state`, `toast(msg)`,
 - API `__island.farm`: `state()` (`beds[{phase, stage, height}]`, `moisture`, `windmill{speed, angle}`, `villager{phase, x, y, z, progress, afloat, visible}`, `canoe{x, y, z, busy}`), `setGrowth(p | [p0..p3])`, `setMoisture(m)`, `setVillager(phase, progress)` (bad input is ignored), `check()` (samples every leg: walker and carried canoe against huts and props, ground under the walk, river banks, footbridge headroom, lagoon depth, jetty, bungalows, fishing boat, berth manoeuvres; worst values with `where`, `ok`).
 - Draw calls: wheel, wheat, villager (+ wheel and villager in the shadow pass and the reflection); 0 for the villager at night. Nothing is allocated per frame.
 
+## Parrots (`<script id="parrots">`)
+
+- One InstancedMesh of 6 birds (three pairs, 19 triangles each) on the gulls' program (`weatherMaterial(Lambert{vertexColors, DoubleSide}, {snow: 0, wet: 0, flap: true})`), no instance colours, `castShadow = false`, `frustumCulled = false`, `userData.otiNoMirror`: one draw call. Red with blue flight feathers and tail tip, a pale face patch and a charcoal beak: **no yellow, no green**. About twice a real macaw's size so the colours read from afar.
+- Bird frame: wingspan along x, **head along local +z** (unlike the gulls), y up; yaw `atan2(dx, dz)`, Euler YXZ (yaw, pitch, then roll about the body). Wings are swept back so that, perched (x scale 0.32 of the bird's, the flap factor then 0), they lie along the flanks; taking off and landing ease the x scale to 1 and back over 0.7 s.
+- Perches: up to 8 broadleaf treetops (the canopy's highest vertex through each instance matrix) picked with `Ze(7171)`: dense forest, at least 12 apart, more than 10 from the plaza and the field, off the volcano. Arcs between perches 10 to 35 apart are precomputed: a sideways bulge, a hump high enough to clear the treetops and ground by 1.6 along the way, a flight time of 1.15 x distance / 4.2 + 1.6 s. The mate follows 0.5 s behind, 0.6 to the side.
+- Cycle per pair: perched 10 to 25 s (a look-around wiggle), then off to a free perch in reach; pairs start staggered. They only take off in fair weather (`rain < 0.4`, `night < 0.5`, `wind < 0.8`, `snow < 0.3`; grounded above 0.5 / 0.6 / 0.9 / 0.4); a flight in progress always lands. Perched birds stay visible at night and in rain.
+- API `__island.parrots`: `state()` (`fair`, `birds[{phase, x, y, z}]`, `pairs[{phase, from, to, t}]`, `perches`), `fly(pair?)` (sends a perched pair off now, weather or not; bad input returns a reason string), `check()` (worst clearance of every arc above the treetops, `ok`).
+
 ## Verifying changes headless
 
 - Chromium flags: `--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist`. Playwright may be installed globally (`npm root -g`); do not add it to the repo.
 - Pause the page's own loop with an init script that wraps `requestAnimationFrame` and checks a `window.__pauseLoop` flag (see `scripts/screenshots.mjs`), then drive time with `__island.step(dt, n)` (runs n simulation steps, renders once).
-- Useful API: `setWeather(name, instant)`, `setTime(h)`, `setSpeed`, `setAuto`, `setDayCycle`, `setAutoRotate`, `erupt()`, `setSnowCover`, `setCamera(az, el, distScale, tx, ty, tz)` (elevation 0.07 to 1.55 rad, was 0.21 to 1.39; distance clamped to `max(6, 3%)`–170% of the default, was `max(20, 8.5%)`–145%), `reset()`, `info()`, `ui.setOpen/setHidden/showToast`, `setAdaptiveResolution(false)`, `ships.summon()`, `ships.state()`, `farm.state()`, `farm.setGrowth`, `farm.setVillager`, `farm.check()`.
-- Baseline from `info()` at load (1280x720), whole frame: **Low: 54 draw calls, 348,770 triangles, 29 programs, 4 textures. High: 86 draw calls and 680,926 triangles with the water reflection pass running (62 and about 513k without it, e.g. looking steeply down), 32 programs, 10 textures** (`probe`-style vertex-buffer bytes: about 8.98 MB Low, 12.33 MB High). These include the farm (wheel, wheat and villager by day) and the merges in `tf`, `df` and the lighthouse. Ships add at most 8 calls (16 while reflected).
+- Useful API: `setWeather(name, instant)`, `setTime(h)`, `setSpeed`, `setAuto`, `setDayCycle`, `setAutoRotate`, `erupt()`, `setSnowCover`, `setCamera(az, el, distScale, tx, ty, tz)` (elevation 0.07 to 1.55 rad, was 0.21 to 1.39; distance clamped to `max(6, 3%)`–170% of the default, was `max(20, 8.5%)`–145%), `reset()`, `info()`, `ui.setOpen/setHidden/showToast`, `setAdaptiveResolution(false)`, `ships.summon()`, `ships.state()`, `farm.state()`, `farm.setGrowth`, `farm.setVillager`, `farm.check()`, `parrots.state()`, `parrots.fly()`, `parrots.check()`.
+- Baseline from `info()` at load (1280x720), whole frame: **Low: 54 draw calls, 348,884 triangles, 29 programs, 4 textures. High: 86 draw calls and 681,040 triangles with the water reflection pass running (62 and about 513k without it, e.g. looking steeply down), 32 programs, 10 textures** (`probe`-style vertex-buffer bytes: about 8.98 MB Low, 12.33 MB High). These include the farm (wheel, wheat and villager by day), the parrots (one call, paid for by the turtles' merge) and the merges in `tf`, `df` and the lighthouse. Ships add at most 8 calls (16 while reflected).
 - Budget rule: a change must not raise draw calls, triangles, programs, textures or vertex-buffer bytes at load, on High or Low. Low is the floor that must not move at all; the High figures above already include the glow, reflections and dense grass, which were added knowingly and are not a licence for more.
 - Collect `console` errors/warnings and `pageerror`; a clean run has none.
 - To test Low headless, make the page pick it at start-up: an init script that reports `(pointer: coarse)` as matching and `navigator.hardwareConcurrency` as 2 (the debug API has no quality setter; the panel's Quality button, `.a-q`, toggles it at runtime).
