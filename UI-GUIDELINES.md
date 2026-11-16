@@ -22,7 +22,7 @@ Defined on `:root`. Components use `var(--…)`; a raw colour in a component rul
 
 | Token | Value | Use |
 |---|---|---|
-| `--bg` | `#0b1424` | Page background, `theme-color`, end colour of the loading and failure gradients |
+| `--bg` | `#0b1424` | Page background, `theme-color`, end colour of the failure gradient |
 | `--glass` | `rgba(16, 24, 38, .70)` | Chip, FABs, toast |
 | `--glass-strong` | `rgba(14, 20, 32, .80)` | Panel (sheet) |
 | `--line` | `rgba(255, 255, 255, .14)` | 1 px borders on every surface and button |
@@ -31,7 +31,7 @@ Defined on `:root`. Components use `var(--…)`; a raw colour in a component rul
 | `--fill-3` | `rgba(255, 255, 255, .22)` | Switch track (off), sheet grab handle |
 | `--text` | `#f3f6fb` | Primary text and icons; selected speed segment background |
 | `--muted` | `rgba(235, 242, 252, .76)` | Secondary text: chip second line, time, headings, hints, unselected labels |
-| `--ink` | `#13202f` | Dark text on light fills (selected speed, "next" badge) |
+| `--ink` | `#13202f` | Dark text on light fills (selected speed, "next" badge, loading screen) |
 | `--knob` | `#fff` | Switch and slider thumbs |
 | `--accent` | `#5fe0d0` | "On": switch track, selected weather and action borders |
 | `--accent-bg` | `rgba(95, 224, 208, .18)` | "On" button background |
@@ -42,8 +42,10 @@ Defined on `:root`. Components use `var(--…)`; a raw colour in a component rul
 | `--sa-t/r/b/l` | `env(safe-area-inset-*)` | Safe-area insets, added to every edge offset |
 
 Illustration colours are the only exceptions and stay inline: the time slider's day gradient
-(`#142048`, `#3a3f7a`, `#ff9a6a`, `#8fd0ff`), the loading screen's sea gradient (`#6fb6e8`,
-`#2c6fa8`) and pulse (`#7fe0c8`, `#2aa59a`, `#1c6f8f`), and the failure screen's `#1d4f7a`.
+(`#142048`, `#3a3f7a`, `#ff9a6a`, `#8fd0ff`), the loading screen's sky gradient (`#b3cde0`,
+`#9cb6c8`, `#7593a9`, sampled from the scene's opening frame) and its diorama (facet colours from
+the bundle's palette `ye`, the plinth and the lava; smoke `#f4f7f9`), and the failure screen's
+`#1d4f7a`.
 
 ## Glass surfaces
 
@@ -63,7 +65,7 @@ sans-serif`, antialiased. No web fonts.
 
 | Size | Weight | Where |
 |---|---|---|
-| 20 px | 700 (`b`) | Failure screen title |
+| 20 px | 700 (`b`) | Failure screen title, loading screen name |
 | 17 px | 700 | Panel title |
 | 15 px | 600 / 400 | Chip weather name (600), switch row labels (400), time value (600, tabular), loading and failure text |
 | 14 px | 600 | Speed segments (tabular), action buttons |
@@ -195,8 +197,20 @@ the camera, glides along the ground; the camera never goes below terrain + 3.5 (
 a camera you moved eases up to 9.5 above land so it stays over the treetops.
 
 ### Loading and failure screens
-Loading: sea-blue radial gradient, pulsing 54 px dot, "Shaping a tiny island…", fades out over
-0.6 s. Failure: dark radial gradient, bold title + one friendly line in `--muted`.
+Loading: a pale sky gradient matched to the scene's opening frame (so the cross-fade is not a
+jolt), a tiny low-poly diorama of the island (`clamp(150px, 42vmin, 240px)` wide, 4:3) and under
+it "One Tiny Island" (20/700) and "Shaping a tiny island…" (15/400), both in `--ink` (7.8:1 to
+10:1 on the gradient behind them, 5.1:1 at its darkest corner). The art is `aria-hidden`; the text
+is plain text. The diorama is built from HTML wrappers, each holding one static inline SVG layer
+in a shared 200 x 150 frame (plinth and sea, sand and shallows, volcano, hills and pines, huts,
+palms, lighthouse islet), plus three smoke puffs and a cloud. The pieces pop in one after another
+(0 to 1.15 s, then a gentle bob, rising smoke and a drifting cloud for as long as loading takes).
+Only `transform` and `opacity` are animated, on HTML elements, so the compositor keeps it moving
+while the scene build blocks the main thread; never animate anything else here, and never animate
+elements inside the SVGs. Any frame of it must look finished enough, because a fast machine shows
+it for a fraction of a second: no minimum display time. It fades out over 0.6 s once the first
+scene frame has been drawn, then is removed. Failure: dark radial gradient, bold title + one
+friendly line in `--muted`; the loader is removed at once underneath it.
 
 ## Breakpoints
 
@@ -216,10 +230,13 @@ Check every UI change at 1280 x 720, 390 x 844 and 320 x 568.
 | Hide / show UI | .35 s | ease (fade + 6 px drop) |
 | Toast, restore button | .3 s | ease |
 | Switch track / thumb | .2 s / .22 s | ease / `cubic-bezier(.3, 1.4, .5, 1)` (overshoot) |
-| Loading fade / pulse | .6 s / 1.4 s loop | ease / ease-in-out |
+| Loading fade | .6 s | ease |
+| Loading pieces pop in | .55 s each, staggered 0–1.15 s | `cubic-bezier(.3, 1.6, .6, 1)` (overshoot), rise 14% from half size |
+| Loading idle: bob / smoke / cloud | 4 s / 3.3 s (three puffs 1.1 s apart) / 16 s loops | ease-in-out / ease-out / linear |
 
 `prefers-reduced-motion: reduce` turns all of these off: no transitions on the panel, toast,
-hidden UI, switch, restore button or UI layer, and no loading pulse. Auto-rotate also starts off.
+hidden UI, switch, restore button or UI layer, and the loading diorama is shown finished and
+still (one puff of smoke, no bob). Auto-rotate also starts off.
 Any new animation needs its reduced-motion rule in the same change.
 
 ## Accessibility
@@ -241,7 +258,7 @@ Any new animation needs its reduced-motion rule in the same change.
   (snow cover at noon, fog, from above and from the default camera, desktop and phone), not over
   the night sky. Measured worst cases now: chip muted text 4.93:1 (was 3.18 with `--glass` .58 and
   `--muted` .66), chip weather name 7.42, toast 6.44, panel muted text 5.60–6.71, Erupt FAB icon
-  about 4.6. Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
+  about 4.6, loading text 7.8–10 (5.1 at the gradient's darkest corner). Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
   hover and focus).
 - **Keyboard:** Tab reaches everything visible, then the island view. **H** hides or shows the UI,
   **Esc** closes the panel. Enter / Space activate buttons, arrows move the slider. With the island
