@@ -6765,16 +6765,19 @@ float otiLod(float k, float fw){ return 1.0 - smoothstep(0.22, 0.55, k*fw); }
 // rock: strata, cracks, grain and lichen; rgb = colour, a = height
 vec4 otiRock(vec3 c0, vec3 p, float up, float fw, float land){
   float f1 = otiLod(1.3, fw); float f2 = otiLod(5.5, fw);
-  float st = p.y*1.25 + vnoise(p.xz*0.22)*2.6 + dot(p.xz, vec2(0.10, 0.06));
+  float st = p.y*1.25 + vnoise(p.xz*0.22)*0.8 + dot(p.xz, vec2(0.10, 0.06));
   float b1 = smoothstep(0.25, 0.75, vnoise(vec2(st, 3.7)));
   float b2 = f2 > 0.0 ? vnoise(vec2(st*3.3, 9.2)) : 0.5;
   float cn = otiN3(p*0.85 + 4.0);
-  float cr = smoothstep(0.80, 0.97, 1.0 - abs(2.0*cn - 1.0)) * f1;
+  float cr = smoothstep(0.84, 0.97, 1.0 - abs(2.0*cn - 1.0)) * f1;
   float gn = f2 > 0.0 ? otiN3(p*5.5) : 0.5;
-  vec3 rc = c0*(1.0 + (b1 - 0.5)*0.34*f1 + (b2 - 0.5)*0.18*f2 + (gn - 0.5)*0.22*f2 + (cn - 0.5)*0.16) * (1.0 - 0.22*cr);
-  float li = smoothstep(0.60, 0.80, vnoise(p.xz*0.8 + 20.0)) * smoothstep(0.50, 0.80, up) * f1 * land;
-  rc = mix(rc, rc*vec3(1.05, 1.18, 0.62), li*0.35);
-  return vec4(rc, b1*0.14*f1 + b2*0.04*f2 + gn*0.03*f2 - cr*0.06); }
+  vec3 rc = c0*(1.0 + (b1 - 0.5)*0.14*f1 + (b2 - 0.5)*0.06*f2 + (gn - 0.5)*0.08*f2) * (1.0 - 0.10*cr);
+  float li = smoothstep(0.62, 0.80, vnoise(p.xz*0.8 + 20.0)) * smoothstep(0.55, 0.85, up) * f1 * land;
+  rc = mix(rc, rc*vec3(1.04, 1.12, 0.74), li*0.20);
+  return vec4(rc, b1*0.20*f1 + b2*0.04*f2 + gn*0.03*f2 - cr*0.05); }
+// rock wetness at the waterline: 1 at the water, gone by about 1.1 above it (wavy top edge)
+float otiWetR(vec3 p){ return (1.0 - smoothstep(0.12, 1.0 + 0.4*vnoise(p.xz*0.5 + 41.0), p.y)) * step(-0.6, p.y); }
+vec3 otiWetC(vec3 c, float y, float w){ return mix(c, c*mix(vec3(0.60, 0.63, 0.62), vec3(0.50, 0.60, 0.46), smoothstep(0.45, 0.1, y)), w); }
 // bump lighting from a height in world units (surface gradient from screen derivatives)
 vec3 otiBump(vec3 n, vec3 p, float h){ vec3 sx = dFdx(p); vec3 sy = dFdy(p); vec3 r1 = cross(sy, n); vec3 r2 = cross(n, sx); float det = dot(sx, r1);
   if (abs(det) < 1e-12) return n;
@@ -6797,24 +6800,38 @@ float otiBh = 0.0; float otiSp = 0.0; float otiGl = 0.0;
     float rK = (1.0 - gK) * (1.0 - sK) * (1.0 - eK);
     vec3 dc = vec3(0.0); float bh = 0.0;
     if (gK > 0.005) {
-      float f2 = otiLod(1.7, fw); float f3 = otiLod(9.0, fw);
+      float otiDN = 1.0 - smoothstep(0.15, 0.6, uNight);
+      float f1 = otiLod(1.6, fw)*otiDN; float f2 = otiLod(1.7, fw); float f3 = otiLod(7.0, fw);
+      float m0 = vnoise(P*0.085 + 37.0);
       float m1 = vnoise(P*0.33 + 11.0);
       float m2 = vnoise(P*1.7 + 3.1);
-      float m3 = f3 > 0.0 ? vnoise(P*vec2(8.0, 10.0)) : 0.5;
-      vec3 g = c0 * (1.0 + (m1 - 0.5)*0.30 + (m2 - 0.5)*0.26*f2 + (m3 - 0.5)*0.30*f3);
-      g = mix(g, g*vec3(1.22, 1.06, 0.62), smoothstep(0.52, 0.85, m1)*0.40);
-      g = mix(g, g*vec3(0.78, 0.92, 0.90), smoothstep(0.50, 0.15, m1)*0.35);
-      dc += g*gK; bh += gK*(m2*0.05*f2 + m3*0.035*f3);
+      vec2 bq = vec2(dot(P, vec2(0.80, 0.60)), dot(P, vec2(-0.60, 0.80)));
+      float m3 = f3 > 0.0 ? vnoise(bq*vec2(2.2, 7.0)) : 0.5;
+      float cid = 0.5; float cd = f1 > 0.0 ? otiCell(P*1.1 + 5.0, cid) : 0.5;
+      vec3 g = c0 * (1.0 + (m1 - 0.5)*mix(0.30, 0.40, otiDN) + (m2 - 0.5)*mix(0.26, 0.30, otiDN)*f2 + (m3 - 0.5)*mix(0.30, 0.40, otiDN)*f3);
+      g *= 1.0 + ((fract(cid*17.3) - 0.5)*0.22 - smoothstep(0.30, 0.75, cd)*0.22 + 0.08)*f1;
+      g = mix(g, g*vec3(1.28, 1.10, 0.56), smoothstep(0.50, 0.80, m0)*0.65*otiDN);
+      g = mix(g, g*vec3(0.74, 0.90, 0.82), smoothstep(0.45, 0.15, m0)*0.45*otiDN);
+      g = mix(g, g*vec3(1.22, 1.06, 0.62), smoothstep(0.52, 0.85, m1)*mix(0.40, 0.45, otiDN));
+      g = mix(g, g*vec3(0.78, 0.92, 0.90), smoothstep(0.50, 0.15, m1)*mix(0.35, 0.40, otiDN));
+      dc += g*gK; bh += gK*(m2*0.05*f2 + (0.75 - cd)*0.10*f1 + m3*mix(0.035, 0.04, otiDN)*f3);
     }
     if (sK > 0.005) {
-      float f1 = otiLod(1.5, fw); float f2 = otiLod(6.0, fw); float f3 = otiLod(14.0, fw);
-      vec2 wq = P + (vec2(vnoise(P*0.45), vnoise(P*0.45 + 31.7)) - 0.5)*3.0;
-      float rp = sin(dot(wq, vec2(0.55, 0.83))*8.5);
-      float rk = f1 * mix(1.0, smoothstep(0.30, 0.62, vnoise(P*0.17 + 5.0)), land) * smoothstep(0.80, 0.95, up);
+      float f1 = otiLod(1.3, fw) * smoothstep(-5.0, -1.5, vSP.y); float f2 = otiLod(6.0, fw); float f3 = otiLod(14.0, fw);
+      // calm the per-vertex sand / sand2 switch (angular light and dark patches): pull the colour most of
+      // the way to the middle of the two along their difference; dunes and other colours keep theirs
+      vec3 sdD = vec3(0.0666, 0.1164, 0.1494); float sk0 = dot(c0 - vec3(0.8883, 0.7887, 0.5425), sdD) / dot(sdD, sdD);
+      vec3 cs = c0 - sdD * sk0 * 0.75 * (1.0 - smoothstep(0.85, 1.1, abs(sk0)));
+      vec2 wq = P + (vec2(vnoise(P*0.3), vnoise(P*0.3 + 31.7)) - 0.5)*4.0;
+      float rph = dot(wq, vec2(0.55, 0.83))*5.6;
+      float rp = sin(rph + 0.7*sin(rph));
+      float rk = f1 * mix(1.0, smoothstep(0.22, 0.55, vnoise(P*0.12 + 5.0)), land) * smoothstep(0.80, 0.95, up);
       float m1 = vnoise(P*0.6 + 2.0);
       float gr = f3 > 0.0 ? hash12(floor(P*26.0)) : 0.5;
-      vec3 sd = c0*(1.0 + (m1 - 0.5)*0.10 + rp*0.06*rk + (gr - 0.5)*0.10*f3);
-      float sh = (rp*0.5 + 0.5)*0.045*rk;
+      float dry = mix(1.0, smoothstep(0.55, 1.6, vSP.y + (m1 - 0.5)*0.30), land);
+      vec3 sd = cs*(1.0 + (m1 - 0.5)*0.04 + rp*0.08*rk + (gr - 0.5)*0.06*f3);
+      sd *= mix(vec3(0.96, 0.95, 0.93), vec3(1.01, 1.01, 1.01), dry);
+      float sh = (rp*0.5 + 0.5)*0.06*rk;
       if (f2 > 0.0) { float id; float d = otiCell(P*2.6, id); float pr = mix(0.09, 0.21, fract(id*31.3));
         float pm = max(smoothstep(0.55, 0.75, vnoise(P*0.35 + 9.0)), 1.0 - smoothstep(0.15, 0.7, vSP.y));
         float pk = smoothstep(pr, pr*0.7, d) * step(0.80, id) * f2 * land * pm;
@@ -6832,7 +6849,8 @@ float otiBh = 0.0; float otiSp = 0.0; float otiGl = 0.0;
         eh += pk*(0.27 - d)*0.25; }
       dc += ed*eK; bh += eK*eh;
     }
-    if (rK > 0.005) { vec4 rr4 = otiRock(c0, vSP, up, fw, land); dc += rr4.rgb*rK; bh += rr4.a*rK; }
+    if (rK > 0.005) { vec4 rr4 = otiRock(c0, vSP, up, fw, land); float wr = otiWetR(vSP);
+      dc += otiWetC(rr4.rgb, vSP.y, wr)*rK; bh += rr4.a*rK*(1.0 - 0.5*wr); otiGl = max(otiGl, wr*rK*0.85); }
     diffuseColor.rgb = dc; otiBh = bh;
   }
 `:""}${Zt.otiDet.value>0&&e.detail==="veg"?`
@@ -6841,18 +6859,23 @@ float otiBh = 0.0; float otiSp = 0.0; float otiGl = 0.0;
     float fw = max(length(dFdx(vSP)), length(dFdy(vSP)));
     float f1 = otiLod(2.4, fw); float f2 = otiLod(9.0, fw);
     float lf = smoothstep(0.02, 0.10, c0.g - max(c0.r, c0.b));
+    float otiDN = 1.0 - smoothstep(0.15, 0.6, uNight);
+    float f0 = otiLod(0.8, fw)*otiDN;
+    float n0 = otiN3(vOP*0.8 + 1.7);
     float n1 = otiN3(vOP*2.4 + 3.0);
     float n2 = f2 > 0.0 ? otiN3(vOP*9.0) : 0.5;
     float dap = smoothstep(0.25, 0.75, n2);
-    vec3 lc = c0*(1.0 + (n1 - 0.5)*0.28*f1 + (dap - 0.5)*0.20*f2);
+    vec3 lc = c0*(1.0 + (n0 - 0.5)*0.42*f0 + (n1 - 0.5)*mix(0.28, 0.34, otiDN)*f1 + (dap - 0.5)*mix(0.20, 0.24, otiDN)*f2);
+    lc = mix(lc, lc*vec3(1.22, 1.08, 0.64), smoothstep(0.55, 0.85, n0)*0.40*f0);
     lc = mix(lc, lc*vec3(1.18, 1.06, 0.70), smoothstep(0.55, 0.90, n1)*0.35*f1);
     float bk = f2 > 0.0 ? otiN3(vOP*vec3(11.0, 1.3, 11.0)) : 0.5;
     vec3 bc = c0*(1.0 + (bk - 0.5)*0.45*f2);
     diffuseColor.rgb = mix(bc, lc, lf);
-    otiBh = mix(bk*0.03*f2, n1*0.08*f1 + dap*0.02*f2, lf); otiGl = lf*0.24;
+    otiBh = mix(bk*0.03*f2, n0*0.12*f0 + n1*0.08*f1 + dap*0.02*f2, lf); otiGl = lf*0.24;
   }
 `:""}${Zt.otiDet.value>0&&e.detail==="rock"?`
-  { float fw = max(length(dFdx(vSP)), length(dFdy(vSP))); vec4 rr4 = otiRock(diffuseColor.rgb, vSP, up, fw, 1.0); diffuseColor.rgb = rr4.rgb; otiBh = rr4.a; }
+  { float fw = max(length(dFdx(vSP)), length(dFdy(vSP))); vec4 rr4 = otiRock(diffuseColor.rgb, vSP, up, fw, 1.0); float wr = otiWetR(vSP);
+    diffuseColor.rgb = otiWetC(rr4.rgb, vSP.y, wr); otiBh = rr4.a*(1.0 - 0.5*wr); otiGl = wr*0.85; }
 `:""}${Zt.otiDet.value>0&&e.detail==="grain"?`
   {
     vec3 c0 = diffuseColor.rgb;
@@ -6864,13 +6887,22 @@ float otiBh = 0.0; float otiSp = 0.0; float otiGl = 0.0;
     float sk = f2 > 0.0 ? vnoise(vec2(dot(vOP, tq)*13.0, dot(vOP, dq)*1.1)) : 0.5;
     float m1 = otiN3(vOP*1.6 + 7.0);
     float mx = max(c0.r, max(c0.g, c0.b)); float mn = min(c0.r, min(c0.g, c0.b));
-    float warm = smoothstep(0.30, 0.50, (mx - mn)/max(mx, 1e-3)) * step(c0.b, c0.g) * step(c0.g, c0.r);
-    float roof = warm * smoothstep(0.15, 0.30, up) * (1.0 - smoothstep(0.85, 0.95, up)) * f1;
-    float row = fract(vOP.y*2.6 + vnoise(vec2(dot(vOP, tq)*2.5, 1.7))*0.3);
+    float sat = (mx - mn)/max(mx, 1e-3); float hue = step(c0.b, c0.g) * step(c0.g, c0.r);
+    float warm = smoothstep(0.30, 0.50, sat) * hue;
+    float roof = warm * smoothstep(0.15, 0.30, up) * (1.0 - smoothstep(0.85, 0.95, up)) * otiLod(1.8, fw);
+    float ru = vOP.y*1.8 + vnoise(vec2(dot(vOP, tq)*2.5, 1.7))*0.35;
+    float row = fract(ru);
+    float bt = hash12(vec2(floor(dot(vOP, tq)*1.7 + floor(ru)*0.5), floor(ru)));
     vec3 gc = c0*(1.0 + (m1 - 0.5)*0.14*f1 + (sk - 0.5)*mix(0.12, 0.28, warm)*f2);
-    gc *= 1.0 - roof*0.25*smoothstep(0.70, 1.0, row);
+    float otiDN = 1.0 - smoothstep(0.15, 0.6, uNight);
+    gc *= 1.0 - roof*(mix(0.20, 0.30, otiDN)*smoothstep(0.62, 1.0, row) - (0.14*smoothstep(0.35, 0.0, row) + (bt - 0.5)*0.14*otiLod(2.6, fw))*otiDN);
+    float wall = smoothstep(0.10, 0.22, sat) * hue * (1.0 - smoothstep(0.25, 0.45, abs(N.y))) * otiDN;
+    float by = dot(vOP, tq)*3.2; float bd = fract(by);
+    float seam = 1.0 - smoothstep(0.0, 0.12, min(bd, 1.0 - bd));
+    float bid = hash12(vec2(floor(by), 5.3));
+    gc *= 1.0 + wall*((bid - 0.5)*0.18*otiLod(3.4, fw) - seam*0.32*otiLod(6.0, fw));
     diffuseColor.rgb = gc;
-    otiBh = sk*mix(0.008, 0.03, warm)*f2 + roof*(1.0 - row)*0.06;
+    otiBh = sk*mix(0.008, 0.03, warm)*f2 + roof*(1.0 - row)*mix(0.06, 0.09, otiDN) - wall*seam*0.02*otiLod(6.0, fw);
   }
 `:""}
   ${e.wet?`
