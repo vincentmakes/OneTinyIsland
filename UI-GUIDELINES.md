@@ -125,6 +125,11 @@ Side panel at the desktop breakpoint: 360 px wide, full height, inset 10 px. `ro
 `aria-label="Island controls"`. Closed, it is off screen and `visibility: hidden` (out of the Tab
 order). Opening it from the chip or the menu button moves focus to its close button; closing it
 (close button, chip, Esc) while focus is inside sends focus back to whatever opened it.
+Title: the logo (`img.tlogo`, 150 px wide, `alt="One Tiny Island"`), centred on the panel (the
+title takes the row, padded 44 px on the left to balance the close button on the right). It
+reuses the loading screen's `data:` URI (copied from `img.ld-name` when the panel is built, so
+the 113 KB of base64 is not in the page twice and nothing is fetched); if that image is missing
+the title falls back to the plain text "One Tiny Island" (17/700).
 Order: Weather (auto switch, grid), Speed, Time of day (cycle switch, slider), Island (actions),
 footnote, source link. The footnote reads: "Drag to orbit, pinch or scroll to zoom, drag with two fingers or
 the right button to move, double-tap to reset. Press H to hide the controls and Esc to close this
@@ -175,6 +180,9 @@ Top centre, 70 px below the top (+ safe area), `role="status"`, `aria-live="poli
 centred, wraps (balanced) within `min(420px, 100vw - 32px)`. It stays up
 `clamp(2.2 s, 1 s + 60 ms per character, 6 s)`: 2.2 s for short messages, about 3.9 s for a
 48-character one. One toast at a time; a new one replaces the old.
+Toasts answer the viewer when a control would otherwise seem to do nothing ("Quality: Low",
+"Sound is not available here", why the ships stay in port) plus the one-time drag hint. Events
+in the scene (an eruption, the pirates meeting the galleon) get no toast: the island shows them.
 
 ### Restore button
 Shown only while the UI is hidden: 44 px glass circle bottom right with the `visibility` icon,
@@ -217,9 +225,8 @@ jolt) and, centred on it with 12 px gaps, the logo, the line "Shaping a tiny isl
   request), cut out of the white-background original so it sits on the sky gradient. The scene
   build waits until it has decoded (250 ms at most) so it is on screen before the build blocks
   the page. The same picture is `docs/logo.png` (README) and, on white, `docs/social-preview.jpg`
-  (the repository's social card). It is the only place the logo appears in the page; the panel
-  title stays plain text. It is a picture of the name, so it has no contrast requirement of its
-  own: the line under it carries the text.
+  (the repository's social card). The panel title shows it too (see Panel). It is a picture of
+  the name, so it has no contrast requirement of its own: the line under it carries the text.
 - **Progress bar:** `.ld-bar`, `clamp(160px, 46vmin, 260px)` wide, 8 px tall, radius 4 (the
   slider track's size), track ink at 16%, fill `--ink`, `aria-hidden` (the line above it says
   what is happening). The scene build blocks the main thread, so the bar cannot measure anything:
@@ -320,10 +327,10 @@ wght 400, GRAD -25, opsz 24**.
 
 ## Voice and tone
 
-- Short, present tense, sentence case: "The volcano erupts!", "Drag to look around",
+- Short, present tense, sentence case: "Drag to look around",
   "Changes the weather now and then".
 - Title case only for the app name ("One Tiny Island"). Button labels are one or two words.
-- Playful but plain: "Ahoy!", "Pirates ahoy!", "Shaping a tiny island…". No jargon (not
+- Playful but plain: "Ahoy!", "Shaping a tiny island…". No jargon (not
   "FPS", "LOD", "render").
 - Explain instead of failing: "Too stormy for ships right now", "The sea is frozen, the ships
   are staying in port", "Sound is not available here".
