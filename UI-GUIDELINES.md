@@ -128,7 +128,7 @@ order). Opening it from the chip or the menu button moves focus to its close but
 Title: the logo (`img.tlogo`, 150 px wide, `alt="One Tiny Island"`), centred on the panel (the
 title takes the row, padded 44 px on the left to balance the close button on the right). It
 reuses the loading screen's `data:` URI (copied from `img.ld-name` when the panel is built, so
-the 113 KB of base64 is not in the page twice and nothing is fetched); if that image is missing
+the 117 KB of base64 is not in the page twice and nothing is fetched); if that image is missing
 the title falls back to the plain text "One Tiny Island" (17/700).
 Order: Weather (auto switch, grid), Speed, Time of day (cycle switch, slider), Island (actions),
 footnote, source link. The footnote reads: "Drag to orbit, pinch or scroll to zoom, drag with two fingers or
@@ -221,8 +221,8 @@ jolt) and, centred on it with 12 px gaps, the logo, the line "Shaping a tiny isl
   `alt="One Tiny Island"`, `width`/`height` set so nothing shifts when it decodes): low-poly
   letters, "ONE TINY" in sand, wood and stone over a large turquoise "ISLAND" with a waterfall,
   a small volcano, palms and two macaws, on a strip of beach. It is a 1096 x 688 WebP with a
-  transparent background, embedded as a `data:` URI (about 85 KB; the page still makes no
-  request), cut out of the white-background original so it sits on the sky gradient. The scene
+  transparent background, embedded as a `data:` URI (about 88 KB; the page still makes no
+  request), with a clean transparent background so it sits on the sky gradient. The scene
   build waits until it has decoded (250 ms at most) so it is on screen before the build blocks
   the page. The same picture is `docs/logo.png` (README) and, on white, `docs/social-preview.jpg`
   (the repository's social card). The panel title shows it too (see Panel). It is a picture of
