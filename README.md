@@ -11,17 +11,17 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **Eight weathers**: clear, partly cloudy, overcast, fog, rain, thunderstorm (with lightning), gale and snow. Left alone, the island picks its own weather every so often.
 - **Day and night**: the sun, moon and stars move on their own, sunsets glow, the village lights come on after dark, and some nights bring an aurora.
 - **A sleepy volcano** that smokes all day and erupts now and then, or whenever you press Erupt.
-- **A little village** with huts, a jetty, a lighthouse on its own rocky islet and a waterfall.
+- **A little village** with huts, a jetty, a lighthouse on its own rocky islet and a waterfall that tumbles from a hill stream into the lagoon.
 - **A tiny farm**: a Thai-style windmill whose woven sails turn lazily on calm days and briskly in a storm, and four little wheat beds that grow from bare soil to golden ears, get harvested row by row and start again. Rain makes them grow faster; snow puts them on hold.
 - **A villager with a canoe**: by day they carry it up through the village and past the farm, paddle it down the river under the footbridge and once round the lagoon, then carry it up again. At dusk, or when the weather turns, they tie it up at the jetty and go home.
-- **Wildlife**: seagulls, leaping dolphins, schools of tropical fish in the lagoon, sea turtles, and three pairs of red-and-blue macaws that sit on the treetops and flit from tree to tree over the forest on fine days.
+- **Wildlife**: seagulls, leaping dolphins, schools of tropical fish that wander the lagoon with beating tails (and scatter when the canoe paddles past), sea turtles that stroke their flippers, glide and come up for air, coral, and three pairs of red-and-blue macaws that sit on the treetops and flit from tree to tree over the forest on fine days.
 - **Snow that settles**: a real snowfall whitens the whole island and freezes the sea, and a snowy night hides a small Christmas surprise.
 - **Boats** bobbing and rolling on the same waves the water shader draws.
 - **A galleon and some friendly pirates**: every now and then a galleon sails by, and the pirates usually come out to meet it. They fire a few cannon puffs that always miss, the galleon fires back (also missing), and off it sails. Nobody gets hurt, nothing sinks. The ships stay in port in storms, gales and on a frozen sea.
 - **Sound** (off by default): waves, wind, rain, gulls, thunder and the odd cannon "poomf".
 - **Surfaces with texture**: rippled sand, patchy grass, layered rock with wet edges at the waterline, clumpy canopies, banded thatch and plank walls, all drawn by the shaders (no image files). Zoom in to see it.
 - **Light and water**: lamps, the campfire and lava glow after dark, wet sand and leaves catch the sun, soft contact shadows gather under the trees, eaves and rocks, and in calm weather the island, the boats and the clouds mirror in the water. Bring the camera down low over the lagoon.
-- **Quality toggle**: High or Low, for older phones and laptops. Low skips the surface detail, the rounder trees and rocks, the glow, the reflections, the contact shadows and the extra grass. If High is struggling, the page drops the reflections first, then the contact shadows, then some resolution, then the glow.
+- **Quality toggle**: High or Low, for older phones and laptops. Low skips the surface detail, the rounder trees, rocks, animals and coral, the glow, the reflections, the contact shadows and the extra grass. If High is struggling, the page drops the reflections first, then the contact shadows, then some resolution, then the glow.
 
 ## Gallery
 
