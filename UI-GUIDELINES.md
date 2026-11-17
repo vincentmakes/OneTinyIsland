@@ -42,8 +42,8 @@ Defined on `:root`. Components use `var(--…)`; a raw colour in a component rul
 | `--sa-t/r/b/l` | `env(safe-area-inset-*)` | Safe-area insets, added to every edge offset |
 
 Illustration colours are the only exceptions and stay inline: the time slider's day gradient
-(`#142048`, `#3a3f7a`, `#ff9a6a`, `#8fd0ff`), the loading screen's sky gradient (`#b3cde0`,
-`#9cb6c8`, `#7593a9`, sampled from the scene's opening frame), its logo (an embedded picture
+(`#142048`, `#3a3f7a`, `#ff9a6a`, `#8fd0ff`), the loading screen's sky gradient (`#fdfeff`,
+`#c4e9fb`, `#7cc6ee`, `#4ea7dc`, a bright clear sky), the panel logo's sky card (`#a9dcf7`, `#e6f5fd`, `#c9efe9`), its logo (an embedded picture
 with its own colours) and its progress track (ink at 16%), and the failure screen's `#1d4f7a`.
 
 ## Glass surfaces
@@ -126,7 +126,11 @@ Side panel at the desktop breakpoint: 360 px wide, full height, inset 10 px. `ro
 order). Opening it from the chip or the menu button moves focus to its close button; closing it
 (close button, chip, Esc) while focus is inside sends focus back to whatever opened it.
 Title: the logo (`img.tlogo`, 150 px wide, `alt="One Tiny Island"`), centred on the panel (the
-title takes the row, padded 44 px on the left to balance the close button on the right). It
+title takes the row, padded 44 px on the left to balance the close button on the right). The logo
+sits on a **sky card**: the title row gets a light sky gradient (`#a9dcf7` to `#e6f5fd` at 70% to
+a lagoon tint `#c9efe9`), radius 16, padding 4/6, 10 px clear of the close button, so the dark
+outlines of the logo read on the dark panel. The plain-text fallback keeps the dark row (the card
+is applied only with `:has(.tlogo)`). It
 reuses the loading screen's `data:` URI (copied from `img.ld-name` when the panel is built, so
 the 117 KB of base64 is not in the page twice and nothing is fetched); if that image is missing
 the title falls back to the plain text "One Tiny Island" (17/700).
@@ -214,9 +218,8 @@ the camera, glides along the ground; the camera never goes below terrain + 3.5 (
 a camera you moved eases up to 9.5 above land so it stays over the treetops.
 
 ### Loading and failure screens
-Loading: a pale sky gradient matched to the scene's opening frame (so the cross-fade is not a
-jolt) and, centred on it with 12 px gaps, the logo, the line "Shaping a tiny island…" (15/400,
-`--ink`: 7.8:1 to 10:1 on the gradient behind it, 5.1:1 at its darkest corner) and a progress bar.
+Loading: a bright, clear sky (radial, lightest just above the logo, deepening to blue at the edges) and, centred on it with 12 px gaps, the logo, the line "Shaping a tiny island…" (15/400,
+`--ink`: 12.9:1 to 16.3:1 on the gradient behind it, 6.2:1 at its darkest corner) and a progress bar.
 - **Logo:** the One Tiny Island logo (`img.ld-name`, `clamp(240px, 78vmin, 460px)` wide,
   `alt="One Tiny Island"`, `width`/`height` set so nothing shifts when it decodes): low-poly
   letters, "ONE TINY" in sand, wood and stone over a large turquoise "ISLAND" with a waterfall,
@@ -290,7 +293,7 @@ Any new animation needs its reduced-motion rule in the same change.
   (snow cover at noon, fog, from above and from the default camera, desktop and phone), not over
   the night sky. Measured worst cases now: chip muted text 4.93:1 (was 3.18 with `--glass` .58 and
   `--muted` .66), chip weather name 7.42, toast 6.44, panel muted text 5.60–6.71, Erupt FAB icon
-  about 4.6, loading text 7.8–10 (5.1 at the gradient's darkest corner). Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
+  about 4.6, loading text 12.9–16.3 (6.2 at the gradient's darkest corner). Exception: the restore button at rest (about 1.8:1, on purpose; full contrast on
   hover and focus).
 - **Keyboard:** Tab reaches everything visible, then the island view. **H** hides or shows the UI,
   **Esc** closes the panel. Enter / Space activate buttons, arrows move the slider. With the island
