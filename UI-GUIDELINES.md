@@ -125,7 +125,8 @@ Side panel at the desktop breakpoint: 360 px wide, full height, inset 10 px. `ro
 `aria-label="Island controls"`. Closed, it is off screen and `visibility: hidden` (out of the Tab
 order). Opening it from the chip or the menu button moves focus to its close button; closing it
 (close button, chip, Esc) while focus is inside sends focus back to whatever opened it.
-Title: the logo (`img.tlogo`, 150 px wide, `alt="One Tiny Island"`), left of the close button. It
+Title: the logo (`img.tlogo`, 150 px wide, `alt="One Tiny Island"`), centred on the panel (the
+title takes the row, padded 44 px on the left to balance the close button on the right). It
 reuses the loading screen's `data:` URI (copied from `img.ld-name` when the panel is built, so
 the 113 KB of base64 is not in the page twice and nothing is fetched); if that image is missing
 the title falls back to the plain text "One Tiny Island" (17/700).
