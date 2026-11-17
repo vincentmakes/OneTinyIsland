@@ -21,7 +21,7 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **Sound** (off by default): waves, wind, rain, gulls, thunder and the odd cannon "poomf".
 - **Surfaces with texture**: rippled sand, patchy grass, layered rock with wet edges at the waterline, clumpy canopies, banded thatch and plank walls, all drawn by the shaders (no image files). Zoom in to see it.
 - **Light and water**: lamps, the campfire and lava glow after dark, wet sand and leaves catch the sun, soft contact shadows gather under the trees, eaves and rocks, and in calm weather the island, the boats and the clouds mirror in the water. Bring the camera down low over the lagoon.
-- **Quality toggle**: High or Low, for older phones and laptops. Low skips the surface detail, the glow, the reflections, the contact shadows and the extra grass. If High is struggling, the page drops the reflections first, then the contact shadows, then some resolution, then the glow.
+- **Quality toggle**: High or Low, for older phones and laptops. Low skips the surface detail, the rounder trees and rocks, the glow, the reflections, the contact shadows and the extra grass. If High is struggling, the page drops the reflections first, then the contact shadows, then some resolution, then the glow.
 
 ## Gallery
 
