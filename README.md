@@ -20,8 +20,8 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **A galleon and some friendly pirates**: every now and then a galleon sails by, and the pirates usually come out to meet it. They fire a few cannon puffs that always miss, the galleon fires back (also missing), and off it sails. Nobody gets hurt, nothing sinks. The ships stay in port in storms, gales and on a frozen sea.
 - **Sound** (off by default): waves, wind, rain, gulls, thunder and the odd cannon "poomf".
 - **Surfaces with texture**: rippled sand, mottled grass, layered rock, leafy canopies and thatched roofs, all drawn by the shaders (no image files). Zoom in to see it.
-- **Light and water**: lamps, the campfire and lava glow after dark, wet sand and leaves catch the sun, and in calm weather the island, the boats and the clouds mirror in the water. Bring the camera down low over the lagoon.
-- **Quality toggle**: High or Low, for older phones and laptops. Low skips the surface detail, the glow, the reflections and the extra grass. On High the page drops the reflections, then some resolution, then the glow by itself if it is struggling. The page also lowers its resolution by itself if it is struggling.
+- **Light and water**: lamps, the campfire and lava glow after dark, wet sand and leaves catch the sun, soft contact shadows gather under the trees, eaves and rocks, and in calm weather the island, the boats and the clouds mirror in the water. Bring the camera down low over the lagoon.
+- **Quality toggle**: High or Low, for older phones and laptops. Low skips the surface detail, the glow, the reflections, the contact shadows and the extra grass. If High is struggling, the page drops the reflections first, then the contact shadows, then some resolution, then the glow.
 
 ## Gallery
 
