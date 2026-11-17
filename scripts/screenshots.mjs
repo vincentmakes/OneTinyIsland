@@ -137,7 +137,7 @@ async function main() {
       }
       await page.waitForTimeout(400); // let CSS transitions (panel, hidden UI) finish
       // Generous timeout: software WebGL can take a while to compile shaders for newly visible effects.
-      await page.screenshot({ path: file, type: 'jpeg', quality: JPEG_QUALITY, timeout: 180000 });
+      await page.screenshot({ path: file, type: 'jpeg', quality: JPEG_QUALITY, timeout: 600000 });
       console.log(`wrote ${file}`);
       await context.close();
     }
