@@ -134,7 +134,7 @@ is applied only with `:has(.tlogo)`). It
 reuses the loading screen's `data:` URI (copied from `img.ld-name` when the panel is built, so
 the 117 KB of base64 is not in the page twice and nothing is fetched); if that image is missing
 the title falls back to the plain text "One Tiny Island" (17/700).
-Order: Weather (auto switch, grid), Speed, Time of day (cycle switch, slider), Island (actions),
+Order: Weather (auto switch, grid), Speed, Time of day (cycle switch, slider), Style, Island (actions),
 footnote, source link. The footnote reads: "Drag to orbit, pinch or scroll to zoom, drag with two fingers or
 the right button to move, double-tap to reset. Press H to hide the controls and Esc to close this
 panel. Everything here is procedural: no images, no downloads." Keep it to these gestures: it
@@ -157,6 +157,12 @@ States: selected `.on` (`--accent-bg`, `--accent` border, `aria-pressed="true"`)
 Segmented control on a `--fill` track: 0.5×, 1×, 2×, 5×, 10×, 30×, 60×. Selected segment is a
 `--text` pill with `--ink` text. Each segment has `aria-label="Speed 5x"` and `aria-pressed`; the
 track is `role="group"`, `aria-label="Speed"`.
+
+### Style control
+Same segmented control as Speed, two segments: "Classic" and "Cartoon" (`.seg.look`, `role="group"`,
+`aria-label="Style"`, each segment `aria-pressed`). Picking one calls `setStyle` and is stored as
+`oti-style` in `localStorage` (`classic` or `toon`), so the page opens in that style next time. No toast:
+the island changes in front of the viewer (after a short pause while the shaders recompile).
 
 ### Time slider
 Native `input type=range`, 0–24, step 0.05, `aria-label="Time of day"`. 8 px track with the
@@ -351,7 +357,7 @@ wght 400, GRAD -25, opsz 24**.
 - No scary imagery or words ("explode", "destroy", "die", "warning").
 - No text input, no accounts, no data collection. One link out of the page: the source link at
   the bottom of the panel, which opens the project's GitHub repository in a new tab. The only stored
-  thing is the hint flag `oti-hint-drag` in `localStorage`.
+  things are the hint flag `oti-hint-drag` and the chosen style `oti-style` in `localStorage`.
 - Everything is reversible in one tap: the weather changes back, the volcano calms down, hidden
   controls come back with one button or H.
 - Sound starts off and is opt-in.

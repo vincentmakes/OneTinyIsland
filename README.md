@@ -23,6 +23,7 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **Sound** (off by default): waves, wind, rain, gulls, thunder and the odd cannon "poomf".
 - **Surfaces with texture**: rippled sand, patchy grass, layered rock with wet edges at the waterline, clumpy canopies, banded thatch and plank walls, all drawn by the shaders (no image files). Zoom in to see it.
 - **Light and water**: lamps, the campfire and lava glow after dark, wet sand and leaves catch the sun, soft contact shadows gather under the trees, eaves and rocks, and in calm weather the island, the boats and the clouds mirror in the water. Bring the camera down low over the lagoon.
+- **Cartoon style**: switch the panel's Style from Classic to Cartoon for a toon look: flat bands of light and shade, ink outlines round everything close to the camera and brighter colours. Same island, same animals; the page remembers your choice. On Low you get the colours and the shading without the outlines.
 - **Quality toggle**: High or Low, for older phones and laptops (it starts on High, or on Low on touch devices with four cores or fewer, except iPhones and iPads). Low skips the surface detail, the rounder trees, rocks, animals and coral, the glow, the reflections, the contact shadows and the extra grass. If High is struggling, the page drops the reflections first, then the contact shadows, then some resolution, then the glow.
 
 ## Gallery
@@ -44,7 +45,7 @@ A tiny procedural 3D island diorama that lives in a single HTML file. Open it, d
 - **Right-drag** (or **two fingers** on a phone) to slide the view around the island. The view follows the ground, so you can fly over the volcano or peek into the village.
 - **Double-click** (or **double-tap**) to jump back to the starting view.
 - With the island focused (click it, or Tab to it): **arrow keys** move, **Shift + arrows** turn, **+** and **-** zoom, **Home** resets.
-- The **menu button** (bottom right) opens the control panel: weather, auto weather, speed, time of day and the day/night cycle, plus Auto-rotate, Sound, Quality, Erupt, Ahoy! and Hide UI, and a link to the source on GitHub at the bottom.
+- The **menu button** (bottom right) opens the control panel: weather, auto weather, speed, time of day and the day/night cycle, the style (Classic or Cartoon), plus Auto-rotate, Sound, Quality, Erupt, Ahoy! and Hide UI, and a link to the source on GitHub at the bottom.
 - **Erupt** (also the volcano button next to the menu) sets the volcano off.
 - **Ahoy!** brings the galleon and the pirate ship sailing into view for a meeting (unless the weather keeps them in port).
 - **H** hides or shows all the controls, handy for screenshots. **Esc** closes the panel.
@@ -68,6 +69,7 @@ If your browser is fussy about `file://` pages, any static server will do, for e
   __island.setTime(21.5)         // jump to the evening
   __island.setSpeed(30)          // fast-forward time
   __island.setAuto(false)        // stop the weather changing on its own
+  __island.setStyle('toon')      // cartoon look ('classic' to go back)
   __island.info()                // draw calls, triangles, current weather...
   __island.farm.state()          // the wheat, the windmill and where the villager is
   ```
